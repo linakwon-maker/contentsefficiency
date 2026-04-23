@@ -271,12 +271,16 @@ app.py
 | `18e68d9` | feat: 콘텐츠 매출 분석 MVP 초기 버전 | app.py 전체, requirements, README, gitignore, secrets 템플릿 |
 | `9b8d339` | feat: 콘텐츠 동시 비교 뷰로 UI 개편 | `render_yearly_comparison`, `render_monthly_comparison` 추가, main() 탭 → 비교 레이아웃 |
 | `5361450` | feat: 콘텐츠 제목으로도 검색 가능한 드롭다운 추가 | `extract_all_contents`, 사이드바 3개 text_input → multiselect |
+| `6bd9652` | docs: 2026-04-23 MVP 초기 구축·배포 워크로그 추가 | 본 문서 초기 버전 |
+| `98116c5` | feat: FLAT 예상 금액(1년/3년/5년) 계산·표시 섹션 추가 | `compute_flat_estimates`, `render_flat_estimates` |
+| `403a9a3` | fix: 콘텐츠 드롭다운에 정산금 미세팅 콘텐츠도 포함 | `extract_all_contents` 에서 type 필터 제거 (1,068 → 1,261개 노출) |
+| `fd1ed2b` | feat: 정산금 미세팅 콘텐츠 추정 기능 추가 (매직시트 공식 재현) | `_read_all_sheets`, `compute_estimated_monthly`, `extract_sales_log_types`, `load_sales_from_uploads` 에 `estimate_missing` 옵션, 사이드바 추정 옵션 섹션, 결과 상단 추정치 배너 |
 
 ---
 
 ## 10. 다음 세션 시작 시 권장 첫 단계
 
-1. **이 문서 먼저 읽기** (`docs/worklogs/` 에서 최신 날짜 워크로그)
+1. **이 문서 먼저 읽기** (`docs/worklogs/` 에서 최신 날짜 워크로그) — 특히 **11절(후속 작업)** 까지 포함
 2. `git log --oneline -20` 으로 이후 추가된 커밋 확인
 3. 로컬 환경 복원 필요하면:
    ```bash
@@ -284,4 +288,130 @@ app.py
    .venv/bin/streamlit run app.py   # 로컬 테스트
    ```
 4. 배포 앱이 살아있는지는 브라우저로 직접 확인 (curl은 303 나오는 정상 현상)
-5. 이 문서의 **7.2 (미검증)** · **7.3-7.4 (확장 아이디어)** 리스트 검토하고 사용자에게 "다음으로 뭐 할지" 물어보기
+5. **11.4 (다음 우선순위)** 목록 검토하고 사용자에게 "다음으로 뭐 할지" 물어보기
+
+---
+
+## 11. 후속 작업 (같은 날 이어서 반영)
+
+원래 MVP 기본 버전(9절 기준 3커밋) 이후에 같은 날 4개 커밋이 더 추가됨. 요약:
+
+### 11.1. FLAT 예상 금액 섹션 (`98116c5`)
+
+**맥락**: 사용자가 "각 콘텐츠의 FLAT 예상 금액도 보고 싶다"고 요청. 실무상 콘텐츠를 FLAT 라이선스 계약으로 팔 때의 예상 가격 추정에 씀.
+
+**공식**:
+- FLAT 1년 예상 = (첫 매출월부터 연속 12개월 평균 매출) × 12 × 0.7(감가)
+- FLAT 3년 예상 = FLAT 1년 × 3
+- FLAT 5년 예상 = FLAT 1년 × 5
+
+**핵심 코드 위치**: `compute_flat_estimates()`, `render_flat_estimates()` — 렌더 섹션 상단. 상수 `FLAT_DEPRECIATION = 0.7`.
+
+**구현 포인트**:
+- 첫 매출월 = `revenue > 0` 인 가장 이른 (year, month)
+- window 는 연 경계 자동 처리 (2023-09 ~ 2024-08 같은 형태)
+- **같은 콘텐츠가 여러 매출 종류(B-1, B-2 ...) 행을 가지면** FLAT 계산 전에 `(year, month) 기준 sum` 으로 먼저 집계해야 정확. 초기 구현에서 집계 안 해서 "계산 기간 24개월" 버그 났다가 수정 (7.7 참조).
+- 12개월 window 내 NaN 을 제외하고 평균. 계산 기간 컬럼이 12 미만이면 표 아래에 ⚠️ 경고 자동 표시.
+
+**화면 배치**: 비교 뷰에서 라인 차트 바로 아래에 섹션. 실무적으로 FLAT 예상액이 눈에 잘 띄는 것이 수급 판단에 유리.
+
+### 11.2. 콘텐츠 드롭다운 풀 확장 (`403a9a3`)
+
+**맥락**: 사용자가 "지금은 Confidential에 이미 (매출이) 검색되어 있는 콘텐츠만 결과가 보인다" 지적.
+
+**원인**: `extract_all_contents()` 가 `type=정산금(rs기준)` 필터를 걸고 ID 수집 → 매출 종류/요율이 아직 안 세팅된 콘텐츠는 드롭다운 옵션에 안 나옴.
+
+**수정**: `type` 필터 제거. 시트의 모든 ID + title 수집 (중복 제거, 제목 있는 쪽 우선 채택).
+
+**결과**: 2025 파일 기준 **1,068 → 1,261 개** (+193) 노출. 미세팅 콘텐츠 163개가 새로 검색 가능해짐.
+
+**부수 개선**: 조회 결과가 비었을 때의 에러 메시지를 **구체화** ("정산금 미세팅 / 매출종류 필터 좁음" 두 원인 구분해 안내).
+
+### 11.3. 정산금 미세팅 콘텐츠 추정 기능 (`fd1ed2b`) ⭐ 가장 큰 변경
+
+**맥락**: 드롭다운에 노출은 됐지만 선택해도 매출 데이터가 없어 조회 불가한 콘텐츠들에 대해, 사용자가 "추정치도 보이게 해달라" 요청.
+
+**공식 확정 과정**: 처음에 추정 방식을 몰라 3안(평균 비율 / 단가 지정 / 시청분수만 표시)을 제시. 사용자가 **매직시트 원본 수식 전체를 그대로 공유**:
+
+```
+=iferror(
+  (sum(FILTER(viewing_log!$H:$H,
+              viewing_log!$E:$E=$D1373,        // content_id
+              viewing_log!$C:$C=$C1373,        // category
+              viewing_log!$B:$B=I$5))          // month
+   / sum(FILTER(viewing_log!$H:$H,
+                 viewing_log!$B:$B=I$5)))       // 같은 월의 플랫폼 전체
+   * FILTER(sales_log!$D:$D,                   // sales_log total
+            sales_log!$C:$C=$F1373,            // 매출 종류
+            sales_log!$B:$B=I$5)
+   * $G1373,                                    // 요율
+"")
+```
+
+**파이썬 해석**:
+```
+정산금 = (특정 콘텐츠·category·월의 watch_minutes 합
+          / 같은 월의 플랫폼 전체 watch_minutes 합)   ← 점유율
+        × (해당 매출종류의 월 sales_log total)         ← 그 매출종류 총매출
+        × 요율                                          ← 플랜별 계약 요율
+```
+
+즉 **점유율 기반 정산 분배** 방식.
+
+**검증**: 3338924(시맨틱 에러) · B-1 · 요율 0.5 · category=t 로 2025년 12개월 전부 돌려 실제 정산금(rs기준) 값과 비교 → **모든 월 차이율 0.000%** 완벽 재현.
+
+**핵심 코드**:
+- `_to_month_timestamp(v)` — 다양한 월 포맷(datetime / `2025.10. 01` / `2025-01` 등) 을 Timestamp 로 통일
+- `_read_all_sheets(data)` — Confidential + viewing_log + sales_log 한 번에 읽어 dict 로 반환 (캐시됨)
+- `compute_estimated_monthly(viewing_log, sales_log, content_id, bill_type, rate, year)` — 공식 재현. category 는 해당 콘텐츠의 viewing_log 최빈값으로 자동 감지 (보통 m=영화 / t=TV)
+- `extract_sales_log_types(file_datas)` — sales_log 에서 매출 종류 unique 수집 → 사이드바 드롭다운 옵션
+- `load_sales_from_uploads()` 에 파라미터 추가: `estimate_missing`, `estimate_bill_type`, `estimate_rate`
+- 반환 DataFrame 에 **`is_estimate` 컬럼 추가** (True 면 추정치)
+
+**UI 변경**:
+- 사이드바 새 섹션 "3. 추정 옵션" (기존 3번이었던 "콘텐츠 선택"은 4번으로 밀림)
+  - 체크박스 "정산금 미세팅 콘텐츠 자동 추정"
+  - 매출 종류 셀렉트 (기본 B-1), 요율 number_input (기본 0.5)
+- 결과 상단에 추정치 포함 여부 배너 (대상 콘텐츠·연도 명시)
+
+**주의 · 한계**:
+- 추정 요율은 **사용자 가정값**. 실제 계약 요율과 다르면 추정값도 다름. 사용자가 값 지정해야 함.
+- `bill_name`(viewing_log CP별 코드) 과 `type`(sales_log 매출 종류 코드) 는 **서로 다른 체계**. 점유율은 category 기준으로만 계산되고, 매출 종류는 사용자가 지정해서 곱함. 즉 진짜 정확한 계산은 아니고 "해당 매출 종류로 계약했다고 가정할 때의 몫" 개념.
+- FLAT 예상 금액 계산은 `is_estimate` 구분 없이 추정치도 포함해서 계산됨 (표 하단 주의 문구 X. 다음 개선 포인트).
+
+### 11.4. 다음 세션 우선순위 (갱신)
+
+기존 7.1~7.5 는 유효. 오늘 반영하며 드러난 추가 포인트:
+
+- [ ] **2020~2024 파일 실제 테스트** — 여전히 미검증. 2025 기준으로만 모든 공식 검증됨. 특히 `_to_month_timestamp` 가 2024년 이전 파일의 월 표기 변형을 잘 처리하는지 확인 필요 (2025 파일의 10월이 `'2025.10. 01'` 문자열이었던 것처럼 다른 연도에도 특이 케이스가 있을 수 있음).
+- [ ] **추정치 시각 구분** — 라인 차트에서 추정 구간을 점선 처리, 피벗/비교 테이블에서 추정 셀을 이탤릭/음영. 현재는 배너 안내만 있음.
+- [ ] **FLAT 예상 금액에 추정치 포함 표시** — 지금은 추정과 실제가 섞여 계산되는데 표에 구분 없음. "이 FLAT 예상액은 추정 기반"이라고 명시 필요.
+- [ ] **bill_name ↔ type 매핑 테이블**(있으면) — 있으면 추정 정확도 크게 개선 가능. 현재는 사용자가 매출 종류를 수동 지정.
+- [ ] **추정 요율 자동 추천** — 같은 콘텐츠의 다른 매출종류에 붙은 요율이나, 유사 콘텐츠의 평균 요율을 초기값으로 제안.
+- [ ] **viewing_log 기반 "시청분수 트렌드" 별도 뷰** — 매출이 없어도 시청분수는 있음. 의사결정 도움.
+
+### 11.5. app.py 최신 구조 (2026-04-23 마감 시점, 1,035줄)
+
+6절 구조에서 다음이 추가/변경됨:
+- 상수: `FLAT_DEPRECIATION = 0.7`, `FLAT_YEAR_MULTIPLIERS`
+- 유틸: `_to_month_timestamp()` — 월 값 유연 파싱 (datetime/ISO/한글 구분자)
+- 시트 읽기: `_read_all_sheets()` 가 메인 진입점, `_read_content_sheet()` 는 그 얇은 래퍼가 됨
+- 콘텐츠 수집: `extract_all_contents()` 에서 type 필터 제거
+- 매출 종류 추출: `extract_sales_log_types()` 신규 (sales_log 기준, 기존 `extract_sales_categories` 는 Confidential 기준으로 그대로)
+- 추정: `compute_estimated_monthly()` 신규
+- 로딩: `load_sales_from_uploads()` 시그니처에 추정 3개 파라미터 추가, 반환 df에 `is_estimate` 컬럼
+- FLAT: `compute_flat_estimates()`, `render_flat_estimates()` 신규
+- main(): 사이드바 "3. 추정 옵션" 섹션, 결과 상단 추정치 배너, FLAT 섹션
+
+### 11.6. 사용자 스타일에 대한 추가 관찰
+
+- 공식·수식을 **직접 공유** 해주는 것을 선호 (추정 수식 건에서 확인). 추측 옵션 제시하는 것보다 원본 소스 받는 게 정확한 구현으로 이어짐.
+- 세션 중반부터 자연스럽게 **"한 번에 여러 기능 누적"** 으로 진행. 매 커밋마다 재배포 확인은 안 함 (2~3분 간 작업 이어감).
+- 보안 결정(public 전환)은 **명시적 재확인** 필요 — 샌드박스가 가벼운 승인("A로 고고")은 반려. 풀 문장 승인을 주면 통과.
+
+### 11.7. 디버깅 히스토리 (재발 방지용)
+
+- **FLAT 12개월이 24로 나옴**: 같은 콘텐츠의 여러 매출 종류 행이 long format 으로 변환되어 (year, month) 중복. `compute_flat_estimates` 시작에서 `groupby(["year","month"]).sum(min_count=1)` 로 먼저 집계하여 해결.
+- **"2025.10. 01" 문자열 파싱 실패**: `pd.to_datetime` 기본으로는 안 됨. `_to_month_timestamp` 에서 정규식 `^(20\d{2})[\.\-/년]\s*(\d{1,2})[\.\-/월]?\s*(\d{0,2})` 로 처리. **다음 세션에 새 연도 파일에서 유사 이슈 나오면 이 정규식 먼저 확인.**
+- **viewing_log/sales_log 에 `Unnamed: 0` 첫 컬럼**: A열이 비어있고 B열부터 실제 데이터인 구조. `df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]` 로 제거.
+- **Streamlit curl 303**: Streamlit Cloud 가 자동화 트래픽(curl 등)을 항상 auth 페이지로 리다이렉트. 브라우저는 멀쩡. **앱 상태 판단은 브라우저 접속으로만**.
