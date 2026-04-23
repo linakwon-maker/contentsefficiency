@@ -212,7 +212,11 @@ def _read_content_sheet(data: bytes) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
-    """업로드된 파일에서 모든 콘텐츠(id, title) 목록 수집. 중복 ID는 제목 있는 것 우선."""
+    """업로드된 파일에서 모든 콘텐츠(id, title) 목록 수집.
+
+    - type 필터 걸지 않음 → 정산금 미세팅 콘텐츠도 목록에 포함 (선택 가능하게)
+    - 같은 ID가 여러 행에 나오면 제목 있는 행을 우선 채택 (보통 type=시청분수 행에 title 있음)
+    """
     seen: dict[str, str] = {}
     for _, data in file_datas:
         try:
@@ -224,13 +228,9 @@ def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
         cols = list(df.columns)
         id_col = _find_column(cols, ID_COLUMN_CANDIDATES)
         title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
-        type_col = _find_column(cols, TYPE_COLUMN_CANDIDATES)
         if id_col is None:
             continue
-        working = df
-        if type_col is not None:
-            working = df[df[type_col].astype(str).str.strip() == REVENUE_TYPE_VALUE]
-        for _, row in working.iterrows():
+        for _, row in df.iterrows():
             cid = str(row[id_col]).strip()
             cid = re.sub(r"\.0$", "", cid)
             if not cid or cid.lower() in {"nan", "none", ""}:
@@ -240,11 +240,9 @@ def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
                 tval = row[title_col]
                 if tval is not None and not (isinstance(tval, float) and pd.isna(tval)):
                     title = str(tval).strip()
-            # 같은 ID가 여러 번 나오면 비어있지 않은 제목 우선
             if cid not in seen or (not seen[cid] and title):
                 seen[cid] = title
     result = [{"id": cid, "title": t} for cid, t in seen.items()]
-    # 제목 가나다순 (빈 제목 뒤로)
     result.sort(key=lambda r: (r["title"] == "", r["title"].lower(), r["id"]))
     return result
 
@@ -728,9 +726,13 @@ def main() -> None:
                 st.write(f"- **{y}년**: {msg}")
 
     if df.empty:
-        st.error(
-            "입력한 콘텐츠 ID 에 해당하는 매출 데이터를 찾지 못했습니다.\n\n"
-            "- 콘텐츠 ID 가 맞는지, 매출 종류 필터가 너무 좁지 않은지 확인해주세요."
+        st.warning(
+            "선택한 콘텐츠에 **매출 데이터가 없습니다.**\n\n"
+            "아래 중 하나에 해당할 수 있어요:\n"
+            "- 매직시트의 `Confidential` 시트에 `type=정산금(rs기준)` 행이 아직 세팅되지 않은 콘텐츠 "
+            "(매출 종류·요율 입력 전)\n"
+            f"- 선택한 매출 종류 필터에 해당 콘텐츠의 매출이 포함되지 않음 "
+            f"(사이드바 '2. 매출 종류 필터' 를 전체로 바꿔서 재조회 해보세요)"
         )
         return
 
