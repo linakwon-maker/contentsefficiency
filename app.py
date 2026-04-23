@@ -364,6 +364,55 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
             )
 
 
+def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
+    """콘텐츠ID → "제목 (ID)" 형태의 표시용 라벨 사전."""
+    labels = {}
+    for cid in ordered_ids:
+        sub = df[df["content_id"] == cid]
+        title = sub["content_title"].iloc[0] if not sub.empty else ""
+        labels[cid] = f"{title} ({cid})" if title and title != cid else cid
+    return labels
+
+
+def render_yearly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
+    """연간 합계(위) + 연간 평균(아래) 비교. 행=연도, 열=콘텐츠."""
+    if df.empty:
+        return
+    labels = _content_labels(df, ordered_ids)
+
+    pivot_sum = (
+        df.groupby(["year", "content_id"])["revenue"].sum().unstack("content_id")
+        .reindex(columns=ordered_ids).sort_index()
+    )
+    pivot_sum.columns = [labels[c] for c in pivot_sum.columns]
+    pivot_sum.index.name = "연도"
+
+    st.caption("연간 합계 (원)")
+    st.dataframe(pivot_sum.style.format("{:,.0f}", na_rep="-"), use_container_width=True)
+
+
+def render_monthly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
+    """월별 상세 비교. 행=연-월, 열=콘텐츠."""
+    if df.empty:
+        return
+    labels = _content_labels(df, ordered_ids)
+
+    df2 = df.copy()
+    df2["period"] = df2["year"].astype(str) + "-" + df2["month"].astype(str).str.zfill(2)
+    pivot = (
+        df2.groupby(["period", "content_id"])["revenue"].sum().unstack("content_id")
+        .reindex(columns=ordered_ids).sort_index()
+    )
+    pivot.columns = [labels[c] for c in pivot.columns]
+    pivot.index.name = "연-월"
+
+    st.dataframe(
+        pivot.style.format("{:,.0f}", na_rep="-"),
+        use_container_width=True,
+        height=400,
+    )
+
+
 def render_comparison_chart(df: pd.DataFrame) -> None:
     if df.empty:
         return
@@ -528,20 +577,36 @@ def main() -> None:
     if missing:
         st.warning(f"다음 ID는 어느 파일에서도 찾지 못했습니다: {', '.join(missing)}")
 
-    tabs = st.tabs([
-        f"📺 {df[df['content_id'] == cid]['content_title'].iloc[0] or cid} ({cid})"
-        for cid in found_ids
-    ])
-    for tab, cid in zip(tabs, found_ids):
-        with tab:
-            sub = df[df["content_id"] == cid]
-            render_yearly_summary(sub)
-            st.subheader("연도 × 월 매출")
-            render_pivot(sub)
-
+    # 비교 대상 콘텐츠 요약 (한 줄)
+    labels = _content_labels(df, found_ids)
+    st.markdown(
+        "**비교 콘텐츠:** "
+        + "  ·  ".join(f"📺 {labels[cid]}" for cid in found_ids)
+    )
     st.divider()
-    st.subheader("📈 콘텐츠 매출 추이 비교")
+
+    # 1) 시간 추이 라인 차트 (비주얼 비교 먼저)
+    st.subheader("📈 매출 추이 비교")
     render_comparison_chart(df)
+
+    # 2) 연간 합계 비교 테이블
+    st.subheader("📋 연간 합계 비교")
+    render_yearly_comparison(df, found_ids)
+
+    # 3) 월별 상세 비교 테이블
+    st.subheader("📋 월별 상세 비교")
+    st.caption("전체 기간의 연-월 × 콘텐츠 매출 (스크롤 가능)")
+    render_monthly_comparison(df, found_ids)
+
+    # 4) 콘텐츠별 상세 피벗 (기본 접힘)
+    st.divider()
+    st.subheader("🔍 콘텐츠별 상세")
+    for cid in found_ids:
+        sub = df[df["content_id"] == cid]
+        with st.expander(f"📺 {labels[cid]}", expanded=False):
+            render_yearly_summary(sub)
+            st.caption("연도 × 월 매출")
+            render_pivot(sub)
 
 
 if __name__ == "__main__":
