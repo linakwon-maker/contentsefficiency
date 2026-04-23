@@ -207,6 +207,49 @@ def _read_content_sheet(data: bytes) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)
+def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
+    """업로드된 파일에서 모든 콘텐츠(id, title) 목록 수집. 중복 ID는 제목 있는 것 우선."""
+    seen: dict[str, str] = {}
+    for _, data in file_datas:
+        try:
+            df = _read_content_sheet(data)
+        except Exception:
+            continue
+        if df.empty:
+            continue
+        cols = list(df.columns)
+        id_col = _find_column(cols, ID_COLUMN_CANDIDATES)
+        title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
+        type_col = _find_column(cols, TYPE_COLUMN_CANDIDATES)
+        if id_col is None:
+            continue
+        working = df
+        if type_col is not None:
+            working = df[df[type_col].astype(str).str.strip() == REVENUE_TYPE_VALUE]
+        for _, row in working.iterrows():
+            cid = str(row[id_col]).strip()
+            cid = re.sub(r"\.0$", "", cid)
+            if not cid or cid.lower() in {"nan", "none", ""}:
+                continue
+            title = ""
+            if title_col is not None:
+                tval = row[title_col]
+                if tval is not None and not (isinstance(tval, float) and pd.isna(tval)):
+                    title = str(tval).strip()
+            # 같은 ID가 여러 번 나오면 비어있지 않은 제목 우선
+            if cid not in seen or (not seen[cid] and title):
+                seen[cid] = title
+    result = [{"id": cid, "title": t} for cid, t in seen.items()]
+    # 제목 가나다순 (빈 제목 뒤로)
+    result.sort(key=lambda r: (r["title"] == "", r["title"].lower(), r["id"]))
+    return result
+
+
+def _format_content_option(c: dict) -> str:
+    return f"{c['title']} ({c['id']})" if c["title"] else c["id"]
+
+
+@st.cache_data(show_spinner=False)
 def extract_sales_categories(file_datas: list[tuple[str, bytes]]) -> list[str]:
     """업로드된 파일들의 '정산금(rs기준)' 행 중 매출 종류 유니크 값 수집."""
     categories: set[str] = set()
@@ -530,10 +573,26 @@ def main() -> None:
             st.caption("먼저 파일을 업로드하세요.")
 
         st.divider()
-        st.header("3. 콘텐츠 ID 입력")
-        id1 = st.text_input("콘텐츠 ID 1", key="id1")
-        id2 = st.text_input("콘텐츠 ID 2 (선택)", key="id2")
-        id3 = st.text_input("콘텐츠 ID 3 (선택)", key="id3")
+        st.header("3. 콘텐츠 선택")
+        content_ids: list[str] = []
+        if file_datas:
+            with st.spinner("콘텐츠 목록 불러오는 중..."):
+                all_contents = extract_all_contents(file_datas)
+            if all_contents:
+                options = [_format_content_option(c) for c in all_contents]
+                option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
+                selected = st.multiselect(
+                    f"콘텐츠 선택 (최대 3개 · 총 {len(all_contents):,}개에서 제목/ID 검색)",
+                    options=options,
+                    max_selections=3,
+                    placeholder="제목 또는 콘텐츠 ID 입력 후 선택",
+                )
+                content_ids = [option_to_id[s] for s in selected]
+            else:
+                st.caption("콘텐츠 목록을 추출하지 못했습니다.")
+        else:
+            st.caption("먼저 파일을 업로드하세요.")
+
         run = st.button("조회", type="primary", use_container_width=True)
 
     if not st.session_state["file_datas"]:
@@ -541,12 +600,11 @@ def main() -> None:
         return
 
     if not run:
-        st.info("👈 콘텐츠 ID 를 입력하고 **조회** 를 눌러주세요.")
+        st.info("👈 콘텐츠를 선택하고 **조회** 를 눌러주세요.")
         return
 
-    content_ids = [x for x in [id1, id2, id3] if x.strip()]
     if not content_ids:
-        st.warning("콘텐츠 ID 를 1개 이상 입력해주세요.")
+        st.warning("콘텐츠를 1개 이상 선택해주세요.")
         return
 
     with st.spinner("엑셀 파일 분석 중..."):
