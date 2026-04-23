@@ -41,6 +41,10 @@ SALES_CATEGORY_COLUMN_CANDIDATES = ["매출 종류", "매출종류", "bill_type"
 MONTH_NAMES_EN_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# FLAT 예상 금액 계산용
+FLAT_DEPRECIATION = 0.7  # 감가율
+FLAT_YEAR_MULTIPLIERS = {"1년": 1, "3년": 3, "5년": 5}
+
 st.set_page_config(
     page_title="콘텐츠 매출 분석",
     page_icon="📊",
@@ -417,6 +421,106 @@ def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
     return labels
 
 
+def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataFrame:
+    """각 콘텐츠의 FLAT 예상 금액 계산.
+
+    - 첫 매출월 = revenue > 0 인 가장 이른 year-month
+    - 그 월부터 연속 12개월 window 슬라이스 (없는 월은 NaN 처리)
+    - window 내 매출 평균 (NaN 제외, 0은 포함)
+    - FLAT 1년 예상 = 평균 × 12 × FLAT_DEPRECIATION (0.7)
+    - FLAT 3년/5년 = FLAT 1년 × 3 / × 5
+    - 계산 기간 컬럼: window 안 NaN이 아닌 월 수 (12면 정상, 미만이면 데이터 부족)
+    """
+    labels = _content_labels(df, ordered_ids)
+    rows: list[dict] = []
+
+    for cid in ordered_ids:
+        sub = df[df["content_id"] == cid]
+        # 같은 (year, month) 에 여러 매출 종류 행이 있으면 합산 → 그 달의 실제 매출
+        sub = (
+            sub.groupby(["year", "month"], as_index=False)["revenue"].sum(min_count=1)
+            .sort_values(["year", "month"])
+            .reset_index(drop=True)
+        )
+
+        nonzero = sub[sub["revenue"].notna() & (sub["revenue"] > 0)]
+        if nonzero.empty:
+            rows.append({
+                "콘텐츠": labels[cid],
+                "첫 매출월": "-",
+                "첫 12개월 평균": float("nan"),
+                "계산 기간(개월)": 0,
+                "FLAT 1년 예상": float("nan"),
+                "FLAT 3년 예상": float("nan"),
+                "FLAT 5년 예상": float("nan"),
+            })
+            continue
+
+        first_y = int(nonzero.iloc[0]["year"])
+        first_m = int(nonzero.iloc[0]["month"])
+
+        # 첫 매출월부터 12개월 window (연 경계 자동 처리)
+        window_months = set()
+        for i in range(12):
+            total = (first_m - 1) + i
+            y = first_y + total // 12
+            m = (total % 12) + 1
+            window_months.add((y, m))
+
+        sub_keys = list(zip(sub["year"].astype(int), sub["month"].astype(int)))
+        window = sub[[k in window_months for k in sub_keys]]
+
+        avg = window["revenue"].mean()
+        valid_months = int(window["revenue"].notna().sum())
+
+        flat_1y = avg * 12 * FLAT_DEPRECIATION if pd.notna(avg) else float("nan")
+        flat_3y = flat_1y * 3 if pd.notna(flat_1y) else float("nan")
+        flat_5y = flat_1y * 5 if pd.notna(flat_1y) else float("nan")
+
+        rows.append({
+            "콘텐츠": labels[cid],
+            "첫 매출월": f"{first_y}-{first_m:02d}",
+            "첫 12개월 평균": avg,
+            "계산 기간(개월)": valid_months,
+            "FLAT 1년 예상": flat_1y,
+            "FLAT 3년 예상": flat_3y,
+            "FLAT 5년 예상": flat_5y,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def render_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> None:
+    if df.empty:
+        return
+    result = compute_flat_estimates(df, ordered_ids)
+    st.caption(
+        f"**계산 방식**: 첫 매출월부터 연속 12개월 평균 매출 × 12 × {FLAT_DEPRECIATION}(감가) "
+        f"= FLAT 1년 예상. 3년·5년은 각각 1년 예상 × 3, × 5."
+    )
+
+    num_fmt = {
+        "첫 12개월 평균": "{:,.0f}",
+        "FLAT 1년 예상": "{:,.0f}",
+        "FLAT 3년 예상": "{:,.0f}",
+        "FLAT 5년 예상": "{:,.0f}",
+    }
+    st.dataframe(
+        result.style.format(num_fmt, na_rep="-"),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # 12개월 데이터 미달 콘텐츠 경고
+    short = result[(result["계산 기간(개월)"] > 0) & (result["계산 기간(개월)"] < 12)]
+    if not short.empty:
+        names = ", ".join(short["콘텐츠"].tolist())
+        st.warning(
+            f"⚠️ 다음 콘텐츠는 첫 매출월부터 12개월 데이터가 부족합니다 "
+            f"(가용 월만 평균해서 계산): {names}"
+        )
+
+
 def render_yearly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
     """연간 합계(위) + 연간 평균(아래) 비교. 행=연도, 열=콘텐츠."""
     if df.empty:
@@ -647,7 +751,11 @@ def main() -> None:
     st.subheader("📈 매출 추이 비교")
     render_comparison_chart(df)
 
-    # 2) 연간 합계 비교 테이블
+    # 2) FLAT 예상 금액
+    st.subheader("💰 FLAT 예상 금액")
+    render_flat_estimates(df, found_ids)
+
+    # 3) 연간 합계 비교 테이블
     st.subheader("📋 연간 합계 비교")
     render_yearly_comparison(df, found_ids)
 
