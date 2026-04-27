@@ -514,6 +514,15 @@ def load_sales_from_uploads(
     sheets_by_year: dict = {}
     title_by_id: dict = {}
 
+    # 모든 업로드 파일의 알려진 (id, title) 을 미리 보강.
+    # 어느 연도 파일에는 정산금 행이 없어도 title 은 있을 수 있으므로, 추정 row 도 제목이 채워짐.
+    try:
+        for c in extract_all_contents(file_datas):
+            if c.get("title") and c["id"] not in title_by_id:
+                title_by_id[c["id"]] = c["title"]
+    except Exception:
+        pass
+
     for filename, data in file_datas:
         year = _detect_year_from_filename(filename)
         if year is None:
@@ -630,6 +639,16 @@ def load_sales_from_uploads(
             file_status["_추정"] = f"💡 추정 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
 
     df_out = pd.DataFrame(rows)
+    # 빈 content_title 을 title_by_id 로 보강 (추정 row 등 제목이 누락된 경우 대응)
+    if not df_out.empty and "content_title" in df_out.columns:
+        empty_mask = (
+            df_out["content_title"].isna()
+            | df_out["content_title"].astype(str).str.strip().eq("")
+        )
+        if empty_mask.any():
+            df_out.loc[empty_mask, "content_title"] = (
+                df_out.loc[empty_mask, "content_id"].map(title_by_id).fillna("")
+            )
     return df_out, file_status, errors
 
 
@@ -674,11 +693,20 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
 
 
 def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
-    """콘텐츠ID → "제목 (ID)" 형태의 표시용 라벨 사전."""
+    """콘텐츠ID → "제목 (ID)" 형태의 표시용 라벨 사전.
+
+    df 에서 빈/NaN content_title 은 건너뛰고, 비어있지 않은 첫 title 을 채택한다.
+    (추정 row 가 첫 row 에 와서 title 이 비어 있어도 다른 row 의 title 을 활용)
+    """
     labels = {}
     for cid in ordered_ids:
-        sub = df[df["content_id"] == cid]
-        title = sub["content_title"].iloc[0] if not sub.empty else ""
+        title = ""
+        if not df.empty and "content_title" in df.columns:
+            sub = df[df["content_id"] == cid]
+            cleaned = sub["content_title"].dropna().astype(str).str.strip()
+            cleaned = cleaned[(cleaned != "") & (cleaned.str.lower() != "nan")]
+            if not cleaned.empty:
+                title = cleaned.iloc[0]
         labels[cid] = f"{title} ({cid})" if title and title != cid else cid
     return labels
 
@@ -826,8 +854,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     if df.empty:
         return
     plot_df = (
-        df.groupby(["content_id", "content_title", "year", "month"], as_index=False)
-        ["revenue"].sum()
+        df.groupby(["content_id", "year", "month"], as_index=False)["revenue"].sum()
     )
     plot_df["date"] = pd.to_datetime(
         plot_df["year"].astype(str) + "-" + plot_df["month"].astype(str).str.zfill(2) + "-01"
@@ -836,10 +863,10 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
 
     fig = go.Figure()
     palette = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    chart_labels = _content_labels(df, list(plot_df["content_id"].unique()))
 
     for idx, (cid, group) in enumerate(plot_df.groupby("content_id")):
-        title = group["content_title"].iloc[0] or cid
-        label = f"{title} ({cid})" if title != cid else cid
+        label = chart_labels.get(cid, cid)
         color = palette[idx % len(palette)]
         fig.add_trace(go.Scatter(
             x=group["date"],
