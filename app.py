@@ -215,48 +215,67 @@ def _to_month_timestamp(v) -> pd.Timestamp:
 
 
 @st.cache_data(show_spinner=False)
-def _read_all_sheets(data: bytes) -> dict:
-    """엑셀에서 confidential / viewing_log / sales_log 시트를 한 번에 읽기."""
-    xls = pd.ExcelFile(BytesIO(data), engine="openpyxl")
-    out: dict = {}
-
-    # Confidential 시트 (헤더 자동 감지)
-    conf_name = _pick_best_sheet(xls.sheet_names)
-    raw = pd.read_excel(xls, sheet_name=conf_name, header=None)
-    if not raw.empty:
-        hrow = _find_header_row(raw)
-        header = raw.iloc[hrow].tolist()
-        body = raw.iloc[hrow + 1:].reset_index(drop=True)
-        body.columns = header
-        body = body.loc[:, body.columns.notna()]
-        out["confidential"] = body
-    else:
-        out["confidential"] = pd.DataFrame()
-
-    # viewing_log & sales_log (header=0 형식)
-    for key, keyword in [("viewing_log", "viewing"), ("sales_log", "sales_log")]:
-        matched = None
-        for name in xls.sheet_names:
-            if keyword in str(name).lower():
-                matched = name
-                break
-        if matched:
-            df = pd.read_excel(xls, sheet_name=matched, header=0)
-            df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
-            df = df.loc[:, df.columns.notna()]
-            if "month" in df.columns:
-                df["month"] = df["month"].apply(_to_month_timestamp)
-            out[key] = df
-        else:
-            out[key] = pd.DataFrame()
-
-    return out
+def _get_sheet_names(data: bytes) -> list[str]:
+    """엑셀의 시트 이름 목록만 반환 (가벼움, 워크북 구조만 파싱)."""
+    try:
+        return list(pd.ExcelFile(BytesIO(data), engine="openpyxl").sheet_names)
+    except Exception:
+        return []
 
 
 @st.cache_data(show_spinner=False)
+def _read_confidential_sheet(data: bytes) -> pd.DataFrame:
+    """Confidential 시트만 단독 로딩 (viewing_log 안 읽음)."""
+    sheet_names = _get_sheet_names(data)
+    if not sheet_names:
+        return pd.DataFrame()
+    conf_name = _pick_best_sheet(sheet_names)
+    raw = pd.read_excel(
+        BytesIO(data), sheet_name=conf_name, header=None, engine="openpyxl",
+    )
+    if raw.empty:
+        return pd.DataFrame()
+    hrow = _find_header_row(raw)
+    header = raw.iloc[hrow].tolist()
+    body = raw.iloc[hrow + 1:].reset_index(drop=True)
+    body.columns = header
+    body = body.loc[:, body.columns.notna()]
+    return body
+
+
+@st.cache_data(show_spinner=False)
+def _read_log_sheet(data: bytes, keyword: str) -> pd.DataFrame:
+    """키워드 매칭되는 단일 로그 시트(viewing_log / sales_log)만 로딩."""
+    sheet_names = _get_sheet_names(data)
+    matched = None
+    for name in sheet_names:
+        if keyword in str(name).lower():
+            matched = name
+            break
+    if matched is None:
+        return pd.DataFrame()
+    df = pd.read_excel(
+        BytesIO(data), sheet_name=matched, header=0, engine="openpyxl",
+    )
+    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
+    df = df.loc[:, df.columns.notna()]
+    if "month" in df.columns:
+        df["month"] = df["month"].apply(_to_month_timestamp)
+    return df
+
+
+def _read_all_sheets(data: bytes) -> dict:
+    """기존 호환: 세 시트 모두 dict 로 반환. 각 시트는 별도 캐시."""
+    return {
+        "confidential": _read_confidential_sheet(data),
+        "viewing_log": _read_log_sheet(data, "viewing"),
+        "sales_log": _read_log_sheet(data, "sales_log"),
+    }
+
+
 def _read_content_sheet(data: bytes) -> pd.DataFrame:
-    """Confidential 시트만 반환 (기존 호환)."""
-    return _read_all_sheets(data).get("confidential", pd.DataFrame())
+    """Confidential 시트 반환 (기존 호환). 가벼운 단독 로더 위임."""
+    return _read_confidential_sheet(data)
 
 
 def compute_estimated_monthly(
@@ -321,14 +340,16 @@ def compute_estimated_monthly(
 
 @st.cache_data(show_spinner=False)
 def extract_sales_log_types(file_datas: list) -> list:
-    """모든 업로드 파일의 sales_log 에서 매출 종류(type) 유니크 값 수집."""
+    """모든 업로드 파일의 sales_log 에서 매출 종류(type) 유니크 값 수집.
+
+    sales_log 시트만 단독 로딩 → viewing_log 는 안 읽음 (큰 시트 회피).
+    """
     types: set = set()
     for _, data in file_datas:
         try:
-            sheets = _read_all_sheets(data)
+            sl = _read_log_sheet(data, "sales_log")
         except Exception:
             continue
-        sl = sheets.get("sales_log", pd.DataFrame())
         if sl.empty or "type" not in sl.columns:
             continue
         for v in sl["type"].dropna().astype(str).str.strip().unique():
@@ -415,7 +436,8 @@ def load_sales_from_uploads(
     selected_categories: list[str] | None = None,
     estimate_missing: bool = False,
     estimate_bill_type: str = "B-1",
-    estimate_rate: float = 0.5,
+    estimate_rates: dict[str, float] | None = None,
+    default_rate: float = 0.5,
 ) -> tuple[pd.DataFrame, dict[str, str], dict[int, str]]:
     """업로드 엑셀에서 선택 콘텐츠의 월별 매출 long format 반환.
 
@@ -423,7 +445,10 @@ def load_sales_from_uploads(
     - estimate_missing=True: 정산금 행이 없는 (콘텐츠, 연도) 조합에 대해
       viewing_log + sales_log 기반 매직시트 공식으로 추정
       반환 df 의 is_estimate 컬럼에 True 표시됨
+    - estimate_rates: 콘텐츠 ID → 요율 매핑. 없으면 default_rate 사용.
     """
+    if estimate_rates is None:
+        estimate_rates = {}
     ids_normalized = {str(x).strip() for x in content_ids if str(x).strip()}
     empty = pd.DataFrame(columns=["content_id", "content_title", "year", "month", "revenue", "is_estimate"])
     if not ids_normalized or not file_datas:
@@ -550,9 +575,10 @@ def load_sales_from_uploads(
                 continue
             missing_ids_for_year = ids_normalized - actual_ids_by_year.get(year, set())
             for cid in missing_ids_for_year:
+                rate = estimate_rates.get(cid, default_rate)
                 monthly = compute_estimated_monthly(
                     viewing_log, sales_log, cid,
-                    estimate_bill_type, estimate_rate, year,
+                    estimate_bill_type, rate, year,
                 )
                 nonzero_count = sum(1 for v in monthly.values() if pd.notna(v) and v > 0)
                 if nonzero_count == 0:
@@ -567,10 +593,10 @@ def load_sales_from_uploads(
                         "revenue": monthly[mnum],
                         "is_estimate": True,
                     })
-                estimate_log.append(f"{year}년 · {cid}({title or 'ID'}) · {nonzero_count}개월 추정")
+                estimate_log.append(f"{year}년 · {cid}({title or 'ID'}) · {nonzero_count}개월 추정 (요율 {rate})")
 
         if estimate_log:
-            file_status["_추정"] = f"💡 추정 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 요율={estimate_rate})"
+            file_status["_추정"] = f"💡 추정 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
 
     df_out = pd.DataFrame(rows)
     return df_out, file_status, errors
@@ -882,35 +908,33 @@ def main() -> None:
             st.caption("먼저 파일을 업로드하세요.")
 
         st.divider()
-        st.header("3. 추정 옵션")
-        estimate_missing = st.checkbox(
-            "정산금 미세팅 콘텐츠 자동 추정",
-            value=False,
-            help="Confidential 시트에 정산금(rs기준) 행이 없는 콘텐츠를 "
-                 "viewing_log + sales_log 기반으로 추정합니다. "
-                 "매직시트 공식: (콘텐츠 category월 시청분수 / 월 전체 시청분수) "
-                 "× 매출종류 총매출 × 요율",
+        st.header("3. 추정 매출 옵션")
+        st.caption(
+            "정산금이 미세팅된 콘텐츠/연도는 매직시트 공식으로 자동 추정됩니다. "
+            "콘텐츠별 요율은 조회 후 결과 화면에서 따로 조정할 수 있어요."
         )
         estimate_bill_type = "B-1"
-        estimate_rate = 0.5
-        if estimate_missing:
-            if file_datas:
-                with st.spinner("sales_log 매출 종류 추출 중..."):
-                    bill_types = extract_sales_log_types(file_datas)
-                if bill_types:
-                    default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
-                    estimate_bill_type = st.selectbox(
-                        "추정 시 적용할 매출 종류",
-                        options=bill_types,
-                        index=default_idx,
-                    )
-                else:
-                    st.caption("sales_log 에서 매출 종류를 찾지 못함")
-            estimate_rate = st.number_input(
-                "추정 시 적용할 요율",
-                min_value=0.0, max_value=10.0, value=0.5, step=0.1,
-                format="%.2f",
-            )
+        default_rate = 0.5
+        if file_datas:
+            with st.spinner("sales_log 매출 종류 추출 중..."):
+                bill_types = extract_sales_log_types(file_datas)
+            if bill_types:
+                default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
+                estimate_bill_type = st.selectbox(
+                    "추정 매출 종류",
+                    options=bill_types,
+                    index=default_idx,
+                    help="정산금 미세팅 콘텐츠에 적용할 매출 종류 (예: B-1).",
+                )
+            else:
+                st.caption("sales_log 에서 매출 종류를 찾지 못함")
+        default_rate = st.number_input(
+            "기본 요율 (신규 콘텐츠 초기값)",
+            min_value=0.0, max_value=10.0, value=0.5, step=0.1,
+            format="%.2f",
+            help="콘텐츠를 새로 선택하면 이 값이 초기 요율로 들어갑니다. "
+                 "조회 후 결과 페이지에서 콘텐츠별로 따로 조정할 수 있습니다.",
+        )
 
         st.divider()
         st.header("4. 콘텐츠 선택")
@@ -939,22 +963,63 @@ def main() -> None:
         st.info("👈 먼저 왼쪽 사이드바에서 **엑셀 파일을 업로드** 하세요.")
         return
 
-    if not run:
+    # 조회 버튼이 눌리면 query 스냅샷을 세션에 저장.
+    # 이후 요율 변경에 의한 rerun 에서도 같은 query 로 재계산.
+    if run:
+        if not content_ids:
+            st.warning("콘텐츠를 1개 이상 선택해주세요.")
+            return
+        st.session_state["query"] = {
+            "content_ids": content_ids,
+            "selected_categories": selected_categories,
+            "estimate_bill_type": estimate_bill_type,
+            "default_rate": default_rate,
+        }
+
+    q = st.session_state.get("query")
+    if not q:
         st.info("👈 콘텐츠를 선택하고 **조회** 를 눌러주세요.")
         return
 
-    if not content_ids:
-        st.warning("콘텐츠를 1개 이상 선택해주세요.")
-        return
+    # 콘텐츠 라벨 맵 (요율 에디터에서 제목 표시용)
+    label_map: dict[str, str] = {}
+    if st.session_state["file_datas"]:
+        for c in extract_all_contents(st.session_state["file_datas"]):
+            label_map[c["id"]] = f"{c['title']} ({c['id']})" if c["title"] else c["id"]
+
+    # 콘텐츠별 요율 에디터 — 항상 노출.
+    # 정산금 미세팅 콘텐츠/연도에만 실제로 적용됨 (실제 정산금 있는 곳은 그 값 그대로).
+    rates: dict[str, float] = {}
+    if q["content_ids"]:
+        st.subheader("⚙️ 콘텐츠별 요율 설정")
+        st.caption(
+            f"매출 종류 **{q['estimate_bill_type']}** 기준으로 콘텐츠별 요율을 따로 설정할 수 있습니다. "
+            "정산금이 미세팅된 콘텐츠/연도에만 적용되며, 실제 정산금이 있는 부분은 시트의 값을 그대로 사용합니다. "
+            "값을 바꾸면 아래 결과가 자동으로 다시 계산됩니다."
+        )
+        rate_cols = st.columns(min(3, len(q["content_ids"])))
+        for col, cid in zip(rate_cols, q["content_ids"]):
+            with col:
+                widget_key = f"rate_{cid}"
+                # 초기값: 이미 위젯에 값이 있으면 그대로, 없으면 query 시점의 default_rate
+                initial = st.session_state.get(widget_key, q["default_rate"])
+                rates[cid] = st.number_input(
+                    f"📺 {label_map.get(cid, cid)}",
+                    min_value=0.0, max_value=10.0,
+                    value=float(initial), step=0.1, format="%.2f",
+                    key=widget_key,
+                )
+        st.divider()
 
     with st.spinner("엑셀 파일 분석 중..."):
         df, file_status, errors = load_sales_from_uploads(
             st.session_state["file_datas"],
-            content_ids,
-            selected_categories=selected_categories or None,
-            estimate_missing=estimate_missing,
-            estimate_bill_type=estimate_bill_type,
-            estimate_rate=estimate_rate,
+            q["content_ids"],
+            selected_categories=q["selected_categories"] or None,
+            estimate_missing=True,
+            estimate_bill_type=q["estimate_bill_type"],
+            estimate_rates=rates,
+            default_rate=q["default_rate"],
         )
 
     with st.expander(f"📁 파일 처리 현황 ({len(file_status)}개)", expanded=False):
@@ -978,7 +1043,7 @@ def main() -> None:
         return
 
     found_ids = df["content_id"].unique().tolist()
-    missing = [cid for cid in content_ids if cid not in found_ids]
+    missing = [cid for cid in q["content_ids"] if cid not in found_ids]
     if missing:
         st.warning(f"다음 ID는 어느 파일에서도 찾지 못했습니다: {', '.join(missing)}")
 
@@ -989,16 +1054,17 @@ def main() -> None:
         + "  ·  ".join(f"📺 {labels[cid]}" for cid in found_ids)
     )
 
-    # 추정치 포함 여부 배너
+    # 추정치 포함 여부 배너 (콘텐츠별 요율 표시)
     if "is_estimate" in df.columns and df["is_estimate"].any():
         estimated_pairs = df[df["is_estimate"]].groupby("content_id")["year"].unique()
         parts = []
         for cid, years in estimated_pairs.items():
             yr_txt = ", ".join(str(int(y)) for y in sorted(years))
-            parts.append(f"**{labels.get(cid, cid)}** ({yr_txt})")
+            applied_rate = rates.get(cid, q["default_rate"])
+            parts.append(f"**{labels.get(cid, cid)}** · 요율 `{applied_rate:.2f}` · ({yr_txt})")
         st.info(
             "💡 아래 데이터에 **추정치**가 포함되어 있습니다 "
-            f"(매출종류 `{estimate_bill_type}` · 요율 `{estimate_rate}` 가정): "
+            f"(매출종류 `{q['estimate_bill_type']}` 가정): "
             + " / ".join(parts)
         )
     st.divider()
