@@ -278,64 +278,108 @@ def _read_content_sheet(data: bytes) -> pd.DataFrame:
     return _read_confidential_sheet(data)
 
 
-def compute_estimated_monthly(
-    viewing_log: pd.DataFrame,
-    sales_log: pd.DataFrame,
-    content_id: str,
-    bill_type: str,
-    rate: float,
-    year: int,
-) -> dict:
-    """매직시트 공식으로 월별 추정 정산금 계산.
+@st.cache_data(show_spinner=False)
+def _viewing_log_total_by_month(data: bytes) -> dict:
+    """플랫폼 전체 월별 시청분수 (콘텐츠 무관). {Timestamp: minutes}.
 
-    정산금 = (해당 콘텐츠·category·월의 watch_minutes / 플랫폼 전체 월 watch_minutes)
-             × (해당 매출종류의 월 sales_log total)
-             × 요율
-
-    - category: viewing_log 에서 해당 콘텐츠의 최빈 category (보통 'm'=영화 / 't'=TV)
-    - 반환: {1: 추정액, 2: 추정액, ...} (값 없으면 NaN)
+    파일당 1번만 계산되어 모든 콘텐츠 추정에서 공유 (가장 무거운 groupby).
     """
-    result = {m: float("nan") for m in range(1, 13)}
-    if viewing_log.empty or sales_log.empty:
-        return result
+    vl = _read_log_sheet(data, "viewing")
+    if vl.empty or "month" not in vl.columns or "watch_minutes" not in vl.columns:
+        return {}
+    s = vl.groupby("month")["watch_minutes"].sum()
+    return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
 
-    # content_id 매칭 (int/str 유연)
+
+@st.cache_data(show_spinner=False)
+def _sales_log_by_type_month(data: bytes, bill_type: str) -> dict:
+    """매출종류별 월 총매출. {Timestamp: total}. 매출종류 변경 전까진 캐시 히트."""
+    sl = _read_log_sheet(data, "sales_log")
+    if sl.empty or "type" not in sl.columns or "total" not in sl.columns:
+        return {}
+    s = sl[sl["type"] == bill_type].groupby("month")["total"].sum()
+    return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
+
+
+@st.cache_data(show_spinner=False)
+def _content_watch_minutes_by_month(data: bytes, content_id: str) -> dict:
+    """콘텐츠 월별 시청분수 (해당 콘텐츠의 최빈 category 기준). {Timestamp: minutes}.
+
+    콘텐츠당 1번만 계산. 요율/매출종류 변경에도 캐시 유지.
+    """
+    vl = _read_log_sheet(data, "viewing")
+    if vl.empty or "content_id" not in vl.columns:
+        return {}
+
     try:
         cid_int = int(float(content_id))
     except (ValueError, TypeError):
         cid_int = None
 
-    if cid_int is not None and "content_id" in viewing_log.columns:
-        content_rows = viewing_log[viewing_log["content_id"] == cid_int]
+    if cid_int is not None:
+        rows = vl[vl["content_id"] == cid_int]
     else:
-        content_rows = viewing_log[viewing_log["content_id"].astype(str) == str(content_id)]
+        rows = vl[vl["content_id"].astype(str) == str(content_id)]
+    if rows.empty:
+        return {}
 
-    if content_rows.empty:
-        return result
-
-    mode_series = content_rows["category"].dropna().mode()
+    mode_series = rows["category"].dropna().mode()
     if mode_series.empty:
-        return result
+        return {}
     category = mode_series.iloc[0]
 
-    # 월별 플랫폼 전체 시청분수 (분모는 month 기준만, category 무관)
-    denom_by_month = viewing_log.groupby("month")["watch_minutes"].sum()
-    # 매출종류/월 별 sales_log 매출
-    sales_filtered = sales_log[sales_log["type"] == bill_type]
-    sales_by_month = sales_filtered.groupby("month")["total"].sum()
+    s = rows[rows["category"] == category].groupby("month")["watch_minutes"].sum()
+    return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
 
-    content_filtered = content_rows[content_rows["category"] == category]
-    numer_by_month = content_filtered.groupby("month")["watch_minutes"].sum()
+
+@st.cache_data(show_spinner=False)
+def _estimated_factor_monthly(
+    data: bytes, content_id: str, bill_type: str, year: int,
+) -> dict:
+    """요율 미적용 월별 추정 factor. {1: factor, 2: factor, ...}.
+
+    factor = (콘텐츠 월 시청분수 / 플랫폼 월 시청분수) × 매출종류 월 총매출
+    실제 추정 정산금 = factor × 요율.
+    요율 변경 시 캐시 히트되어 재계산 없음.
+    """
+    result = {m: float("nan") for m in range(1, 13)}
+    denom = _viewing_log_total_by_month(data)
+    if not denom:
+        return result
+    sales = _sales_log_by_type_month(data, bill_type)
+    if not sales:
+        return result
+    numer = _content_watch_minutes_by_month(data, content_id)
+    if not numer:
+        return result
 
     for mnum in range(1, 13):
         month = pd.Timestamp(f"{year}-{mnum:02d}-01")
-        numer = float(numer_by_month.get(month, 0) or 0)
-        denom = float(denom_by_month.get(month, 0) or 0)
-        sales_val = float(sales_by_month.get(month, 0) or 0)
-        if denom > 0 and sales_val > 0:
-            result[mnum] = (numer / denom) * sales_val * rate
-
+        n = numer.get(month, 0) or 0
+        d = denom.get(month, 0) or 0
+        s = sales.get(month, 0) or 0
+        if d > 0 and s > 0:
+            result[mnum] = (n / d) * s
     return result
+
+
+def compute_estimated_monthly(
+    data: bytes,
+    content_id: str,
+    bill_type: str,
+    rate: float,
+    year: int,
+) -> dict:
+    """매직시트 공식 월별 추정 정산금. factor × rate.
+
+    무거운 점유율/매출 합산은 _estimated_factor_monthly 가 캐시.
+    이 함수는 캐시된 factor 에 요율만 곱하므로 요율 슬라이더 변경에 거의 즉시 반응.
+    """
+    factor = _estimated_factor_monthly(data, content_id, bill_type, year)
+    return {
+        m: (f * rate if pd.notna(f) else float("nan"))
+        for m, f in factor.items()
+    }
 
 
 @st.cache_data(show_spinner=False)
@@ -539,17 +583,9 @@ def load_sales_from_uploads(
                 })
         actual_ids_by_year[year] = year_actual_ids
 
-        # 추정용 viewing_log / sales_log 확보
+        # 추정용: 연도별 raw bytes 만 보관 (viewing_log/sales_log 는 캐시된 헬퍼가 lazy 로 처리)
         if estimate_missing:
-            try:
-                all_sheets = _read_all_sheets(data)
-                sheets_by_year[year] = {
-                    "viewing_log": all_sheets.get("viewing_log", pd.DataFrame()),
-                    "sales_log": all_sheets.get("sales_log", pd.DataFrame()),
-                    "confidential": all_sheets.get("confidential", pd.DataFrame()),
-                }
-            except Exception:
-                pass
+            sheets_by_year[year] = data
 
         # 콘텐츠 제목은 Confidential 전체에서도 수집 (매칭 안 된 ID 용)
         if title_col:
@@ -568,17 +604,12 @@ def load_sales_from_uploads(
     # 추정: (콘텐츠, 연도) 조합 중 실제 정산금 데이터 없으면 공식으로 추정
     estimate_log: list = []
     if estimate_missing:
-        for year, sheets in sheets_by_year.items():
-            viewing_log = sheets.get("viewing_log", pd.DataFrame())
-            sales_log = sheets.get("sales_log", pd.DataFrame())
-            if viewing_log.empty or sales_log.empty:
-                continue
+        for year, year_data in sheets_by_year.items():
             missing_ids_for_year = ids_normalized - actual_ids_by_year.get(year, set())
             for cid in missing_ids_for_year:
                 rate = estimate_rates.get(cid, default_rate)
                 monthly = compute_estimated_monthly(
-                    viewing_log, sales_log, cid,
-                    estimate_bill_type, rate, year,
+                    year_data, cid, estimate_bill_type, rate, year,
                 )
                 nonzero_count = sum(1 for v in monthly.values() if pd.notna(v) and v > 0)
                 if nonzero_count == 0:
