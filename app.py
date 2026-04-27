@@ -666,6 +666,13 @@ def render_pivot(df: pd.DataFrame) -> None:
     pivot.columns = [f"{m}월" for m in pivot.columns]
     pivot["연간 합계"] = pivot.sum(axis=1, skipna=True)
     pivot["연간 평균"] = pivot.iloc[:, :12].mean(axis=1, skipna=True)
+
+    # 마지막 행에 총합계 (월별 합 / 연간 합계 합 / 전체 월 평균)
+    total_row = pivot.iloc[:, :12].sum(axis=0, skipna=True)
+    total_row["연간 합계"] = pivot["연간 합계"].sum(skipna=True)
+    total_row["연간 평균"] = pivot.iloc[:, :12].stack().mean()
+    pivot.loc["총합"] = total_row
+
     st.dataframe(
         pivot.style.format("{:,.0f}", na_rep="-"),
         use_container_width=True,
@@ -681,8 +688,11 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
         .reset_index()
         .sort_values("year")
     )
-    cols = st.columns(len(yearly))
-    for col, (_, row) in zip(cols, yearly.iterrows()):
+    grand_total = float(yearly["total"].sum())
+    grand_avg = float(df["revenue"].mean()) if df["revenue"].notna().any() else 0.0
+
+    cols = st.columns(len(yearly) + 1)
+    for col, (_, row) in zip(cols[:-1], yearly.iterrows()):
         with col:
             st.metric(
                 label=f"{int(row['year'])} 합계",
@@ -690,6 +700,13 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
                 delta=f"월평균 {row['avg']:,.0f}",
                 delta_color="off",
             )
+    with cols[-1]:
+        st.metric(
+            label="🏁 전체 합계",
+            value=f"{grand_total:,.0f}",
+            delta=f"월평균 {grand_avg:,.0f}",
+            delta_color="off",
+        )
 
 
 def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
