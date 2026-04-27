@@ -896,14 +896,38 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
             ))
 
     fig.update_layout(
-        title="콘텐츠 매출 추이 비교 (빨간 X = 전월 대비 30% 이상 하락)",
+        title="콘텐츠 매출 추이 비교 (빨간 X = 전월 대비 30% 이상 하락 · 드래그로 영역 확대 · 더블클릭으로 리셋)",
         xaxis_title="연월",
         yaxis_title="매출",
         hovermode="x unified",
-        height=520,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3),
+        height=560,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.45),
+        dragmode="zoom",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_xaxes(
+        rangeselector=dict(
+            buttons=[
+                dict(count=6, label="6개월", step="month", stepmode="backward"),
+                dict(count=1, label="1년", step="year", stepmode="backward"),
+                dict(count=2, label="2년", step="year", stepmode="backward"),
+                dict(count=3, label="3년", step="year", stepmode="backward"),
+                dict(step="all", label="전체"),
+            ],
+            x=0, y=1.08, xanchor="left", yanchor="bottom",
+            bgcolor="#f5f5f5",
+        ),
+        rangeslider=dict(visible=True, thickness=0.06),
+        type="date",
+    )
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displaylogo": False,
+            "modeBarButtonsToAdd": ["drawline", "drawopenpath", "eraseshape"],
+        },
+    )
 
 
 # --------------------------------------------------------------------------
