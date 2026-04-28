@@ -66,17 +66,20 @@ if _LOGO_PATH.exists():
 # --------------------------------------------------------------------------
 
 _WATCHA_PINK = "#FF0558"
-_BG_DEEP = "#0F0F0F"
-_BG_CARD = "#1A1A1A"
-_BORDER = "#2A2A2A"
-_TEXT_MUTED = "#9A9A9A"
+_BG_PAGE = "#FFFFFF"
+_BG_SOFT = "#FAFAFA"
+_BG_CARD = "#F5F5F5"
+_BORDER = "#ECECEC"
+_TEXT = "#1A1A1A"
+_TEXT_MUTED = "#6B6B6B"
 
 st.markdown(
     f"""
     <style>
-    /* 페이지 배경 살짝 더 어두운 차콜 + 본문 폭 살짝 좁혀 시네마틱한 여백 */
+    /* 페이지: 흰톤 베이스에 살짝 오프화이트 그라데이션 — 왓챠피디아 라이트 톤 */
     .stApp {{
-        background: linear-gradient(180deg, {_BG_DEEP} 0%, #141414 240px) no-repeat;
+        background: linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 240px) no-repeat;
+        color: {_TEXT};
     }}
     .block-container {{
         padding-top: 2rem;
@@ -85,6 +88,7 @@ st.markdown(
     }}
 
     /* 타이포 — 강한 대비, 시네마틱 위계 */
+    h1, h2, h3 {{ color: {_TEXT}; }}
     h1 {{ font-weight: 800; letter-spacing: -0.02em; }}
     h2 {{
         font-weight: 700;
@@ -93,20 +97,20 @@ st.markdown(
         padding-left: 0.6rem;
         margin-top: 2rem !important;
     }}
-    h3 {{ font-weight: 600; color: #EAEAEA; }}
+    h3 {{ font-weight: 600; color: #2A2A2A; }}
     .stCaption, [data-testid="stCaptionContainer"] {{
         color: {_TEXT_MUTED} !important;
     }}
 
-    /* 디바이더를 더 얇고 차콜 톤으로 */
+    /* 디바이더 — 얇고 옅게 */
     hr {{
         border-color: {_BORDER} !important;
-        opacity: 0.7;
+        opacity: 0.9;
     }}
 
-    /* 사이드바 — 살짝 더 어두운 패널 */
+    /* 사이드바 — 미세하게 더 회색 톤 패널 */
     [data-testid="stSidebar"] {{
-        background-color: #0C0C0C;
+        background-color: {_BG_SOFT};
         border-right: 1px solid {_BORDER};
     }}
     [data-testid="stSidebar"] h1,
@@ -141,16 +145,18 @@ st.markdown(
     .stButton > button[kind="secondary"] {{
         border-radius: 999px;
         border: 1px solid {_BORDER};
-        background-color: transparent;
+        background-color: white;
+        color: {_TEXT};
     }}
 
-    /* 입력 위젯 — 어두운 카드 톤 */
+    /* 입력 위젯 — 옅은 카드 톤 */
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input,
     [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
     [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
-        background-color: {_BG_CARD};
+        background-color: white;
         border-radius: 10px;
+        border: 1px solid {_BORDER};
     }}
 
     /* 메트릭 카드 — 라운드 + 미세 보더 */
@@ -163,6 +169,7 @@ st.markdown(
     [data-testid="stMetricValue"] {{
         font-weight: 700;
         letter-spacing: -0.01em;
+        color: {_TEXT};
     }}
     [data-testid="stMetricLabel"] {{
         color: {_TEXT_MUTED} !important;
@@ -178,6 +185,7 @@ st.markdown(
     }}
     [data-testid="stExpander"] summary {{
         font-weight: 600;
+        color: {_TEXT};
     }}
 
     /* 데이터프레임/표 — 둥근 모서리 */
@@ -195,8 +203,8 @@ st.markdown(
 
     /* 스크롤바 살짝 미니멀 */
     ::-webkit-scrollbar {{ width: 10px; height: 10px; }}
-    ::-webkit-scrollbar-thumb {{ background: #333; border-radius: 999px; }}
-    ::-webkit-scrollbar-thumb:hover {{ background: #444; }}
+    ::-webkit-scrollbar-thumb {{ background: #D4D4D4; border-radius: 999px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: #BDBDBD; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -1090,18 +1098,18 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     fig.update_layout(
         title=dict(
             text="콘텐츠 매출 추이 비교  ·  빨간 X = 전월 대비 30%↓  ·  드래그 확대 · 더블클릭 리셋",
-            font=dict(color="#EAEAEA", size=15),
+            font=dict(color="#1A1A1A", size=15),
         ),
         xaxis_title="",
         yaxis_title="",
         hovermode="x unified",
         height=560,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#DADADA")),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#1A1A1A")),
         dragmode="zoom",
-        # 왓챠피디아 다크 톤
-        paper_bgcolor="#1A1A1A",
-        plot_bgcolor="#141414",
-        font=dict(color="#DADADA"),
+        # 왓챠피디아 라이트 톤
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FAFAFA",
+        font=dict(color="#1A1A1A"),
         margin=dict(l=20, r=20, t=70, b=20),
     )
     fig.update_xaxes(
@@ -1114,16 +1122,16 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 dict(step="all", label="전체"),
             ],
             x=0, y=1.08, xanchor="left", yanchor="bottom",
-            bgcolor="#2A2A2A",
+            bgcolor="#F0F0F0",
             activecolor="#FF0558",
-            font=dict(color="#EAEAEA"),
+            font=dict(color="#1A1A1A"),
         ),
-        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#1F1F1F"),
+        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#F5F5F5"),
         type="date",
-        gridcolor="#262626",
-        zerolinecolor="#262626",
+        gridcolor="#ECECEC",
+        zerolinecolor="#ECECEC",
     )
-    fig.update_yaxes(gridcolor="#262626", zerolinecolor="#262626")
+    fig.update_yaxes(gridcolor="#ECECEC", zerolinecolor="#ECECEC")
     st.plotly_chart(
         fig,
         use_container_width=True,
