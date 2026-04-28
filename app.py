@@ -1149,11 +1149,11 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 showlegend=True,
             ))
 
+    # 차트 위 보조 설명: Plotly title 대신 st.caption 으로 분리 → 버튼과 안 겹침
+    st.caption("빨간 X = 전월 대비 30%↓  ·  드래그로 영역 확대 · 더블클릭으로 리셋")
+
     fig.update_layout(
-        title=dict(
-            text="콘텐츠 매출 추이 비교  ·  빨간 X = 전월 대비 30%↓  ·  드래그 확대 · 더블클릭 리셋",
-            font=dict(color="#1A1A1A", size=15),
-        ),
+        title=None,
         xaxis_title="",
         yaxis_title="",
         hovermode="x unified",
@@ -1164,7 +1164,8 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FAFAFA",
         font=dict(color="#1A1A1A"),
-        margin=dict(l=20, r=20, t=70, b=20),
+        # 셀렉터 버튼이 위에 자리잡을 공간 확보
+        margin=dict(l=20, r=20, t=80, b=20),
     )
     fig.update_xaxes(
         rangeselector=dict(
@@ -1175,10 +1176,11 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 dict(count=3, label="3년", step="year", stepmode="backward"),
                 dict(step="all", label="전체"),
             ],
-            x=0, y=1.08, xanchor="left", yanchor="bottom",
+            # 버튼을 차트 plot 영역 바로 위에 배치 (제목 텍스트 없음 → 겹칠 게 없음)
+            x=0, y=1.0, xanchor="left", yanchor="bottom",
             bgcolor="#F0F0F0",
             activecolor="#FF0558",
-            font=dict(color="#1A1A1A"),
+            font=dict(color="#1A1A1A", size=12),
         ),
         rangeslider=dict(visible=True, thickness=0.06, bgcolor="#F5F5F5"),
         type="date",
