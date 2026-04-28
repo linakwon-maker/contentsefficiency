@@ -62,13 +62,19 @@ if _LOGO_PATH.exists():
 
 
 def _render_title(title: str, *, level: str = "h1") -> None:
-    """왓챠 W 로고 + 제목을 한 줄로 렌더."""
+    """왓챠 W 로고 + 제목을 바짝 붙여 한 줄로 렌더."""
     if _LOGO_PATH.exists():
-        col_logo, col_title = st.columns([1, 12], vertical_alignment="center")
-        with col_logo:
-            st.image(str(_LOGO_PATH), width=56)
-        with col_title:
-            st.markdown(f"<{level} style='margin:0;'>{title}</{level}>", unsafe_allow_html=True)
+        import base64
+        b64 = base64.b64encode(_LOGO_PATH.read_bytes()).decode()
+        st.markdown(
+            f"""
+            <div style="display:flex; align-items:center; gap:14px; margin:0 0 0.5rem 0;">
+                <img src="data:image/png;base64,{b64}" style="width:48px; height:48px; border-radius:8px;" />
+                <{level} style="margin:0; line-height:1.1;">{title}</{level}>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         st.markdown(f"<{level} style='margin:0;'>{title}</{level}>", unsafe_allow_html=True)
 
@@ -91,7 +97,7 @@ def require_password() -> None:
         )
         st.stop()
 
-    _render_title("🔒 WATCHA SVOD 콘텐츠 매출 분석")
+    _render_title("WATCHA SVOD 콘텐츠 매출 분석")
     st.write("비밀번호를 입력하세요.")
     pw = st.text_input("비밀번호", type="password", label_visibility="collapsed")
     if st.button("입장"):
@@ -975,7 +981,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
 def main() -> None:
     require_password()
 
-    _render_title("📊 WATCHA SVOD 콘텐츠 매출 분석")
+    _render_title("WATCHA SVOD 콘텐츠 매출 분석")
     st.caption("왓챠 '콘텐츠 매직시트' 엑셀 파일 업로드 → 콘텐츠 ID 1~3개 + 매출 종류 선택 → 연도별·월별 매출 비교")
 
     if "file_datas" not in st.session_state:
