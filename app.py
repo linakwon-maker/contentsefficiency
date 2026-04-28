@@ -46,7 +46,7 @@ MONTH_NAMES_EN_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 FLAT_DEPRECIATION = 0.7  # 감가율
 FLAT_YEAR_MULTIPLIERS = {"1년": 1, "3년": 3, "5년": 5}
 
-_LOGO_PATH = Path(__file__).parent / "assets" / "watcha_w.svg"
+_LOGO_PATH = Path(__file__).parent / "assets" / "watcha_w.png"
 
 st.set_page_config(
     page_title="WATCHA SVOD 콘텐츠 매출 분석",
