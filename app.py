@@ -396,13 +396,24 @@ def _to_month_timestamp(v) -> pd.Timestamp:
         return pd.NaT
 
 
+# calamine 엔진이 있으면 사용 (openpyxl 대비 5~10배 빠름).
+try:
+    import python_calamine  # noqa: F401
+    _EXCEL_ENGINE = "calamine"
+except Exception:
+    _EXCEL_ENGINE = "openpyxl"
+
+
 @st.cache_data(show_spinner=False)
 def _get_sheet_names(data: bytes) -> list[str]:
     """엑셀의 시트 이름 목록만 반환 (가벼움, 워크북 구조만 파싱)."""
     try:
-        return list(pd.ExcelFile(BytesIO(data), engine="openpyxl").sheet_names)
+        return list(pd.ExcelFile(BytesIO(data), engine=_EXCEL_ENGINE).sheet_names)
     except Exception:
-        return []
+        try:
+            return list(pd.ExcelFile(BytesIO(data), engine=_EXCEL_ENGINE).sheet_names)
+        except Exception:
+            return []
 
 
 @st.cache_data(show_spinner=False)
@@ -413,7 +424,7 @@ def _read_confidential_sheet(data: bytes) -> pd.DataFrame:
         return pd.DataFrame()
     conf_name = _pick_best_sheet(sheet_names)
     raw = pd.read_excel(
-        BytesIO(data), sheet_name=conf_name, header=None, engine="openpyxl",
+        BytesIO(data), sheet_name=conf_name, header=None, engine=_EXCEL_ENGINE,
     )
     if raw.empty:
         return pd.DataFrame()
@@ -437,7 +448,7 @@ def _read_log_sheet(data: bytes, keyword: str) -> pd.DataFrame:
     if matched is None:
         return pd.DataFrame()
     df = pd.read_excel(
-        BytesIO(data), sheet_name=matched, header=0, engine="openpyxl",
+        BytesIO(data), sheet_name=matched, header=0, engine=_EXCEL_ENGINE,
     )
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
     df = df.loc[:, df.columns.notna()]
@@ -565,22 +576,41 @@ def compute_estimated_monthly(
 
 
 @st.cache_data(show_spinner=False)
+def _sales_log_type_column(data: bytes) -> pd.Series:
+    """sales_log 의 type 컬럼만 단독 로드. usecols 로 1개 컬럼만 읽어 매우 가벼움."""
+    sheet_names = _get_sheet_names(data)
+    matched = next((n for n in sheet_names if "sales_log" in str(n).lower()), None)
+    if matched is None:
+        return pd.Series([], dtype=str)
+    try:
+        df = pd.read_excel(
+            BytesIO(data), sheet_name=matched, usecols=["type"],
+            engine=_EXCEL_ENGINE, dtype=str,
+        )
+    except Exception:
+        # type 컬럼이 없거나 엔진/스키마 불일치면 fallback (전체 읽기)
+        try:
+            full = _read_log_sheet(data, "sales_log")
+            return full.get("type", pd.Series([], dtype=str))
+        except Exception:
+            return pd.Series([], dtype=str)
+    return df.get("type", pd.Series([], dtype=str))
+
+
+@st.cache_data(show_spinner=False)
 def extract_sales_log_types(file_datas: list) -> list:
     """모든 업로드 파일의 sales_log 에서 매출 종류(type) 유니크 값 수집.
 
-    sales_log 시트만 단독 로딩 → viewing_log 는 안 읽음 (큰 시트 회피).
+    sales_log 의 'type' 컬럼만 단독 로딩 → viewing_log 회피 + 다른 컬럼 회피 (가장 가벼움).
     """
     types: set = set()
     for _, data in file_datas:
-        try:
-            sl = _read_log_sheet(data, "sales_log")
-        except Exception:
+        s = _sales_log_type_column(data)
+        if s.empty:
             continue
-        if sl.empty or "type" not in sl.columns:
-            continue
-        for v in sl["type"].dropna().astype(str).str.strip().unique():
-            if v and v.lower() not in {"nan", "none"}:
-                types.add(v)
+        cleaned = s.dropna().astype(str).str.strip()
+        cleaned = cleaned[(cleaned != "") & (~cleaned.str.lower().isin({"nan", "none"}))]
+        types.update(cleaned.unique())
     return sorted(types)
 
 
@@ -608,16 +638,18 @@ def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
         title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
         if id_col is None:
             continue
-        for _, row in df.iterrows():
-            cid = str(row[id_col]).strip()
-            cid = re.sub(r"\.0$", "", cid)
-            if not cid or cid.lower() in {"nan", "none", ""}:
-                continue
-            title = ""
-            if title_col is not None:
-                tval = row[title_col]
-                if tval is not None and not (isinstance(tval, float) and pd.isna(tval)):
-                    title = str(tval).strip()
+
+        # 벡터화: iterrows 대신 컬럼 단위 처리
+        ids = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+        valid = ids.notna() & (ids != "") & (~ids.str.lower().isin({"nan", "none"}))
+        if title_col is not None:
+            titles = df[title_col].where(df[title_col].notna(), "").astype(str).str.strip()
+        else:
+            titles = pd.Series([""] * len(df), index=df.index)
+
+        ids_v = ids[valid].tolist()
+        titles_v = titles[valid].tolist()
+        for cid, title in zip(ids_v, titles_v):
             if cid not in seen or (not seen[cid] and title):
                 seen[cid] = title
     result = [{"id": cid, "title": t} for cid, t in seen.items()]
@@ -687,7 +719,7 @@ def load_sales_from_uploads(
     id_col_override = col_override.get("content_id")
     title_col_override = col_override.get("content_title")
 
-    rows: list[dict] = []
+    rows: list = []  # DataFrame 또는 dict 들의 혼합. 마지막에 concat.
     file_status: dict[str, str] = {}
     errors: dict[int, str] = {}
     # (content_id, year) 별로 실제 정산금 데이터가 있었는지 추적 → 추정 필요 판단
@@ -752,43 +784,53 @@ def load_sales_from_uploads(
         filtered = working[working["_id_str"].isin(ids_normalized)]
 
         matched_rows = len(filtered)
-        year_actual_ids: set = set()
-        for _, row in filtered.iterrows():
-            cid = row["_id_str"]
-            title = ""
-            if title_col and title_col in row:
-                tval = row[title_col]
-                if tval is not None and not (isinstance(tval, float) and pd.isna(tval)):
-                    title = str(tval).strip()
-            if title and cid not in title_by_id:
-                title_by_id[cid] = title
-            year_actual_ids.add(cid)
-            for idx, mcol in enumerate(month_cols, start=1):
-                rows.append({
-                    "content_id": cid,
-                    "content_title": title,
-                    "year": year,
-                    "month": idx,
-                    "revenue": _to_number(row[mcol]),
-                    "is_estimate": False,
-                })
+        year_actual_ids: set = set(filtered["_id_str"].unique())
         actual_ids_by_year[year] = year_actual_ids
+
+        if matched_rows > 0:
+            # title 컬럼 정리 (벡터)
+            if title_col and title_col in filtered.columns:
+                title_series = filtered[title_col].where(filtered[title_col].notna(), "").astype(str).str.strip()
+            else:
+                title_series = pd.Series([""] * matched_rows, index=filtered.index)
+
+            # title_by_id 보강 (id 별 첫 비어있지 않은 title)
+            tdf = pd.DataFrame({"cid": filtered["_id_str"].values, "title": title_series.values})
+            valid_titles = tdf[tdf["title"] != ""].drop_duplicates("cid")
+            for cid, title in zip(valid_titles["cid"], valid_titles["title"]):
+                if cid not in title_by_id:
+                    title_by_id[cid] = title
+
+            # 12개월 컬럼을 melt 로 long format 으로 한 번에 변환 (iterrows 제거)
+            sub = filtered[["_id_str"] + month_cols].copy()
+            sub.columns = ["content_id"] + list(range(1, 13))
+            sub["__title"] = title_series.values
+            melted = sub.melt(
+                id_vars=["content_id", "__title"],
+                value_vars=list(range(1, 13)),
+                var_name="month",
+                value_name="revenue",
+            )
+            # _to_number 를 컬럼 전체에 한 번 (apply 는 list-comp 보다 빠름)
+            melted["revenue"] = [_to_number(v) for v in melted["revenue"]]
+            melted["content_title"] = melted["__title"]
+            melted["year"] = year
+            melted["is_estimate"] = False
+            rows.append(
+                melted[["content_id", "content_title", "year", "month", "revenue", "is_estimate"]]
+            )
 
         # 추정용: 연도별 raw bytes 만 보관 (viewing_log/sales_log 는 캐시된 헬퍼가 lazy 로 처리)
         if estimate_missing:
             sheets_by_year[year] = data
 
-        # 콘텐츠 제목은 Confidential 전체에서도 수집 (매칭 안 된 ID 용)
+        # 콘텐츠 제목은 Confidential 전체에서도 수집 (매칭 안 된 ID 용) — 벡터화
         if title_col:
-            df["_id_str_all"] = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
-            for _, row in df.iterrows():
-                _cid = row["_id_str_all"]
-                if _cid in ids_normalized and _cid not in title_by_id:
-                    tval = row.get(title_col)
-                    if tval is not None and not (isinstance(tval, float) and pd.isna(tval)):
-                        t = str(tval).strip()
-                        if t:
-                            title_by_id[_cid] = t
+            ids_all = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            titles_all = df[title_col].where(df[title_col].notna(), "").astype(str).str.strip()
+            mask_all = ids_all.isin(ids_normalized) & (titles_all != "")
+            for cid, t in zip(ids_all[mask_all], titles_all[mask_all]):
+                title_by_id.setdefault(cid, t)
 
         file_status[filename] = f"✅ {year}년 · {matched_rows}개 행 매칭 (정산금 기준)"
 
@@ -806,21 +848,21 @@ def load_sales_from_uploads(
                 if nonzero_count == 0:
                     continue
                 title = title_by_id.get(cid, "")
-                for mnum in range(1, 13):
-                    rows.append({
-                        "content_id": cid,
-                        "content_title": title,
-                        "year": year,
-                        "month": mnum,
-                        "revenue": monthly[mnum],
-                        "is_estimate": True,
-                    })
+                est_df = pd.DataFrame({
+                    "content_id": cid,
+                    "content_title": title,
+                    "year": year,
+                    "month": list(range(1, 13)),
+                    "revenue": [monthly[m] for m in range(1, 13)],
+                    "is_estimate": True,
+                })
+                rows.append(est_df)
                 estimate_log.append(f"{year}년 · {cid}({title or 'ID'}) · {nonzero_count}개월 추정 (요율 {rate})")
 
         if estimate_log:
             file_status["_추정"] = f"💡 추정 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
 
-    df_out = pd.DataFrame(rows)
+    df_out = pd.concat(rows, ignore_index=True) if rows else empty.copy()
     # 빈 content_title 을 title_by_id 로 보강 (추정 row 등 제목이 누락된 경우 대응)
     if not df_out.empty and "content_title" in df_out.columns:
         empty_mask = (
