@@ -396,24 +396,41 @@ def _to_month_timestamp(v) -> pd.Timestamp:
         return pd.NaT
 
 
-# calamine 엔진이 있으면 사용 (openpyxl 대비 5~10배 빠름).
+# calamine 엔진이 있으면 시도 (openpyxl 대비 5~10배 빠름). 어떤 단계든 실패 시 openpyxl 로 자동 fallback.
+_PRIMARY_ENGINE = "openpyxl"
 try:
     import python_calamine  # noqa: F401
-    _EXCEL_ENGINE = "calamine"
+    _PRIMARY_ENGINE = "calamine"
 except Exception:
-    _EXCEL_ENGINE = "openpyxl"
+    pass
+
+
+def _read_excel_safe(*args, **kwargs) -> pd.DataFrame:
+    """pd.read_excel + 엔진 fallback. 1차 엔진이 어떤 이유로든 실패하면 openpyxl 로 재시도."""
+    try:
+        return pd.read_excel(*args, engine=_PRIMARY_ENGINE, **kwargs)
+    except Exception:
+        if _PRIMARY_ENGINE == "openpyxl":
+            raise
+        return pd.read_excel(*args, engine="openpyxl", **kwargs)
+
+
+def _excel_file_safe(data: bytes) -> pd.ExcelFile:
+    try:
+        return pd.ExcelFile(BytesIO(data), engine=_PRIMARY_ENGINE)
+    except Exception:
+        if _PRIMARY_ENGINE == "openpyxl":
+            raise
+        return pd.ExcelFile(BytesIO(data), engine="openpyxl")
 
 
 @st.cache_data(show_spinner=False)
 def _get_sheet_names(data: bytes) -> list[str]:
     """엑셀의 시트 이름 목록만 반환 (가벼움, 워크북 구조만 파싱)."""
     try:
-        return list(pd.ExcelFile(BytesIO(data), engine=_EXCEL_ENGINE).sheet_names)
+        return list(_excel_file_safe(data).sheet_names)
     except Exception:
-        try:
-            return list(pd.ExcelFile(BytesIO(data), engine=_EXCEL_ENGINE).sheet_names)
-        except Exception:
-            return []
+        return []
 
 
 @st.cache_data(show_spinner=False)
@@ -423,9 +440,7 @@ def _read_confidential_sheet(data: bytes) -> pd.DataFrame:
     if not sheet_names:
         return pd.DataFrame()
     conf_name = _pick_best_sheet(sheet_names)
-    raw = pd.read_excel(
-        BytesIO(data), sheet_name=conf_name, header=None, engine=_EXCEL_ENGINE,
-    )
+    raw = _read_excel_safe(BytesIO(data), sheet_name=conf_name, header=None)
     if raw.empty:
         return pd.DataFrame()
     hrow = _find_header_row(raw)
@@ -447,9 +462,7 @@ def _read_log_sheet(data: bytes, keyword: str) -> pd.DataFrame:
             break
     if matched is None:
         return pd.DataFrame()
-    df = pd.read_excel(
-        BytesIO(data), sheet_name=matched, header=0, engine=_EXCEL_ENGINE,
-    )
+    df = _read_excel_safe(BytesIO(data), sheet_name=matched, header=0)
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
     df = df.loc[:, df.columns.notna()]
     if "month" in df.columns:
@@ -583,9 +596,8 @@ def _sales_log_type_column(data: bytes) -> pd.Series:
     if matched is None:
         return pd.Series([], dtype=str)
     try:
-        df = pd.read_excel(
-            BytesIO(data), sheet_name=matched, usecols=["type"],
-            engine=_EXCEL_ENGINE, dtype=str,
+        df = _read_excel_safe(
+            BytesIO(data), sheet_name=matched, usecols=["type"], dtype=str,
         )
     except Exception:
         # type 컬럼이 없거나 엔진/스키마 불일치면 fallback (전체 읽기)

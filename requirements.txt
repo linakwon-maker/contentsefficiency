@@ -2,4 +2,6 @@ streamlit>=1.32
 pandas>=2.2
 plotly>=5.20
 openpyxl>=3.1
-python-calamine>=0.2
+# python-calamine: 옵션. 있으면 read_excel 이 5~10배 빨라짐. 없어도 openpyxl 로 fallback.
+# Streamlit Cloud 환경에서 자동 설치 실패 사례가 있어 강제 의존성에서 제외.
+# 원하면 수동으로 추가하거나 Streamlit Cloud Advanced settings 에서 Python 버전 확인 후 활성화.
