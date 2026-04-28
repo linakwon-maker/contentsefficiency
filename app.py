@@ -61,16 +61,163 @@ if _LOGO_PATH.exists():
         pass
 
 
+# --------------------------------------------------------------------------
+# 글로벌 테마 (왓챠피디아 톤: 다크 차콜 + 핑크 액센트 + 둥근 카드)
+# --------------------------------------------------------------------------
+
+_WATCHA_PINK = "#FF0558"
+_BG_DEEP = "#0F0F0F"
+_BG_CARD = "#1A1A1A"
+_BORDER = "#2A2A2A"
+_TEXT_MUTED = "#9A9A9A"
+
+st.markdown(
+    f"""
+    <style>
+    /* 페이지 배경 살짝 더 어두운 차콜 + 본문 폭 살짝 좁혀 시네마틱한 여백 */
+    .stApp {{
+        background: linear-gradient(180deg, {_BG_DEEP} 0%, #141414 240px) no-repeat;
+    }}
+    .block-container {{
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+        max-width: 1240px;
+    }}
+
+    /* 타이포 — 강한 대비, 시네마틱 위계 */
+    h1 {{ font-weight: 800; letter-spacing: -0.02em; }}
+    h2 {{
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        border-left: 3px solid {_WATCHA_PINK};
+        padding-left: 0.6rem;
+        margin-top: 2rem !important;
+    }}
+    h3 {{ font-weight: 600; color: #EAEAEA; }}
+    .stCaption, [data-testid="stCaptionContainer"] {{
+        color: {_TEXT_MUTED} !important;
+    }}
+
+    /* 디바이더를 더 얇고 차콜 톤으로 */
+    hr {{
+        border-color: {_BORDER} !important;
+        opacity: 0.7;
+    }}
+
+    /* 사이드바 — 살짝 더 어두운 패널 */
+    [data-testid="stSidebar"] {{
+        background-color: #0C0C0C;
+        border-right: 1px solid {_BORDER};
+    }}
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {{
+        border-left: none;
+        padding-left: 0;
+        font-size: 0.95rem;
+        color: {_TEXT_MUTED};
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }}
+
+    /* 버튼 — 왓챠 핑크 채움, 둥글게 */
+    .stButton > button[kind="primary"],
+    .stDownloadButton > button[kind="primary"],
+    div[data-testid="stFormSubmitButton"] > button {{
+        background-color: {_WATCHA_PINK};
+        color: white;
+        border: none;
+        border-radius: 999px;
+        padding: 0.55rem 1.4rem;
+        font-weight: 600;
+        transition: transform 0.05s ease, filter 0.15s ease;
+    }}
+    .stButton > button[kind="primary"]:hover,
+    .stDownloadButton > button[kind="primary"]:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {{
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+    }}
+    .stButton > button[kind="secondary"] {{
+        border-radius: 999px;
+        border: 1px solid {_BORDER};
+        background-color: transparent;
+    }}
+
+    /* 입력 위젯 — 어두운 카드 톤 */
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
+        background-color: {_BG_CARD};
+        border-radius: 10px;
+    }}
+
+    /* 메트릭 카드 — 라운드 + 미세 보더 */
+    [data-testid="stMetric"] {{
+        background-color: {_BG_CARD};
+        border: 1px solid {_BORDER};
+        border-radius: 14px;
+        padding: 1rem 1.2rem;
+    }}
+    [data-testid="stMetricValue"] {{
+        font-weight: 700;
+        letter-spacing: -0.01em;
+    }}
+    [data-testid="stMetricLabel"] {{
+        color: {_TEXT_MUTED} !important;
+        font-size: 0.82rem !important;
+    }}
+
+    /* expander — 카드처럼 */
+    [data-testid="stExpander"] {{
+        background-color: {_BG_CARD};
+        border: 1px solid {_BORDER};
+        border-radius: 14px;
+        overflow: hidden;
+    }}
+    [data-testid="stExpander"] summary {{
+        font-weight: 600;
+    }}
+
+    /* 데이터프레임/표 — 둥근 모서리 */
+    [data-testid="stDataFrame"], [data-testid="stTable"] {{
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid {_BORDER};
+    }}
+
+    /* alert(info/warning/success) — 더 차분한 톤 */
+    [data-testid="stAlert"] {{
+        border-radius: 12px;
+        border: 1px solid {_BORDER};
+    }}
+
+    /* 스크롤바 살짝 미니멀 */
+    ::-webkit-scrollbar {{ width: 10px; height: 10px; }}
+    ::-webkit-scrollbar-thumb {{ background: #333; border-radius: 999px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: #444; }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 def _render_title(title: str, *, level: str = "h1") -> None:
-    """왓챠 W 로고 + 제목을 바짝 붙여 한 줄로 렌더."""
+    """왓챠 W 로고 + 제목을 바짝 붙여 한 줄로 렌더 (왓챠피디아 톤)."""
     if _LOGO_PATH.exists():
         import base64
         b64 = base64.b64encode(_LOGO_PATH.read_bytes()).decode()
         st.markdown(
             f"""
-            <div style="display:flex; align-items:center; gap:14px; margin:0 0 0.5rem 0;">
-                <img src="data:image/png;base64,{b64}" style="width:48px; height:48px; border-radius:8px;" />
-                <{level} style="margin:0; line-height:1.1;">{title}</{level}>
+            <div style="display:flex; align-items:center; gap:14px; margin:0 0 1rem 0;">
+                <img src="data:image/png;base64,{b64}"
+                     style="width:44px; height:44px; border-radius:10px;
+                            box-shadow:0 2px 12px rgba(255,5,88,0.25);" />
+                <{level} style="margin:0; line-height:1.1; font-weight:800;
+                                 letter-spacing:-0.02em; border-left:none; padding-left:0;">
+                    {title}
+                </{level}>
             </div>
             """,
             unsafe_allow_html=True,
@@ -906,7 +1053,8 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     plot_df = plot_df.sort_values(["content_id", "date"]).reset_index(drop=True)
 
     fig = go.Figure()
-    palette = ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    # 왓챠피디아 톤: 핑크 메인 + 보조 컬러는 차분한 시네마틱 톤
+    palette = ["#FF0558", "#5BC0EB", "#F7B538"]
     chart_labels = _content_labels(df, list(plot_df["content_id"].unique()))
 
     for idx, (cid, group) in enumerate(plot_df.groupby("content_id")):
@@ -940,13 +1088,21 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
             ))
 
     fig.update_layout(
-        title="콘텐츠 매출 추이 비교 (빨간 X = 전월 대비 30% 이상 하락 · 드래그로 영역 확대 · 더블클릭으로 리셋)",
-        xaxis_title="연월",
-        yaxis_title="매출",
+        title=dict(
+            text="콘텐츠 매출 추이 비교  ·  빨간 X = 전월 대비 30%↓  ·  드래그 확대 · 더블클릭 리셋",
+            font=dict(color="#EAEAEA", size=15),
+        ),
+        xaxis_title="",
+        yaxis_title="",
         hovermode="x unified",
         height=560,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.45),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#DADADA")),
         dragmode="zoom",
+        # 왓챠피디아 다크 톤
+        paper_bgcolor="#1A1A1A",
+        plot_bgcolor="#141414",
+        font=dict(color="#DADADA"),
+        margin=dict(l=20, r=20, t=70, b=20),
     )
     fig.update_xaxes(
         rangeselector=dict(
@@ -958,11 +1114,16 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 dict(step="all", label="전체"),
             ],
             x=0, y=1.08, xanchor="left", yanchor="bottom",
-            bgcolor="#f5f5f5",
+            bgcolor="#2A2A2A",
+            activecolor="#FF0558",
+            font=dict(color="#EAEAEA"),
         ),
-        rangeslider=dict(visible=True, thickness=0.06),
+        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#1F1F1F"),
         type="date",
+        gridcolor="#262626",
+        zerolinecolor="#262626",
     )
+    fig.update_yaxes(gridcolor="#262626", zerolinecolor="#262626")
     st.plotly_chart(
         fig,
         use_container_width=True,
