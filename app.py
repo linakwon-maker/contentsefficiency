@@ -219,6 +219,21 @@ st.markdown(
     [data-testid="stFileUploader"] section:hover {{
         background: {_PINK_TINT} !important;
     }}
+    /* 버튼 안 글자가 버튼 폭을 넘어가지 않도록 */
+    [data-testid="stFileUploader"] button {{
+        font-size: 0.85rem !important;
+        padding: 0.45rem 1.1rem !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+        min-width: auto !important;
+    }}
+    [data-testid="stFileUploader"] button > div,
+    [data-testid="stFileUploader"] button > span,
+    [data-testid="stFileUploader"] button p {{
+        font-size: 0.85rem !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+    }}
 
     /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
     [data-testid="stMetric"] {{
