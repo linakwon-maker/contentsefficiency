@@ -209,55 +209,20 @@ st.markdown(
         outline: none !important;
     }}
 
-    /* 사이드바 최소 폭 확장 — 좁아서 위젯 안 텍스트가 겹치는 문제 회피 */
-    [data-testid="stSidebar"] {{
-        min-width: 300px !important;
-    }}
-    [data-testid="stSidebar"] > div:first-child {{
+    /* 사이드바 최소 폭 확장 (위젯 안 텍스트 잘림 방지) */
+    [data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child {{
         min-width: 300px !important;
     }}
 
-    /* 파일 업로더 — 점선 핑크 보더, 배경은 흰톤 */
+    /* 파일 업로더 — 점선 핑크 보더 + 흰 배경 (내부 layout 은 Streamlit 기본 유지) */
     [data-testid="stFileUploader"] section {{
         border-radius: 18px !important;
         border: 2px dashed {_PINK_SOFT} !important;
         background: white !important;
         transition: background 0.2s ease;
-        /* 좁은 사이드바에서 dropzone 의 자식들이 겹치지 않게 세로 배치 */
-        flex-direction: column !important;
-        align-items: stretch !important;
-        gap: 0.5rem !important;
-        padding: 1rem !important;
     }}
     [data-testid="stFileUploader"] section:hover {{
         background: {_PINK_TINT} !important;
-    }}
-    /* dropzone 내부 두 영역 모두 풀 폭 */
-    [data-testid="stFileUploader"] section > div,
-    [data-testid="stFileUploader"] section > section {{
-        width: 100% !important;
-        min-width: 0 !important;
-        flex: 0 0 auto !important;
-    }}
-    /* 버튼: 부모 폭 가득 채우고 텍스트는 한 줄 */
-    [data-testid="stFileUploader"] button {{
-        width: 100% !important;
-        font-size: 0.82rem !important;
-        padding: 0.5rem 0.8rem !important;
-        line-height: 1.2 !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        min-width: 0 !important;
-    }}
-    [data-testid="stFileUploader"] button *,
-    [data-testid="stFileUploader"] section * {{
-        font-family: inherit !important;
-    }}
-    [data-testid="stFileUploader"] button::before,
-    [data-testid="stFileUploader"] button::after {{
-        content: none !important;
-        display: none !important;
     }}
 
     /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
