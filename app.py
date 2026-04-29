@@ -828,6 +828,125 @@ def _format_content_option(c: dict) -> str:
     return f"{c['title']} ({c['id']})" if c["title"] else c["id"]
 
 
+def _rank_matches(all_contents: list[dict], kw: str) -> list[dict]:
+    """검색어 매칭 + 우선순위 정렬.
+    1) prefix 매칭 (제목 또는 ID 가 kw 로 시작) — 가장 우선
+    2) substring 매칭 (kw 가 어디든 포함)
+    3) 공백 무시 매칭 ('프리미어 리그' ↔ '프리미어리그')
+    같은 그룹 안에서는 짧은 제목이 위로.
+    """
+    kw_lower = kw.lower()
+    kw_ns = kw_lower.replace(" ", "")
+    scored: list[tuple[int, dict]] = []
+    for c in all_contents:
+        title = (c.get("title") or "").lower()
+        cid = str(c.get("id", "")).lower()
+        title_ns = title.replace(" ", "")
+        if title.startswith(kw_lower) or cid.startswith(kw_lower):
+            score = 1000 - len(title)
+        elif kw_lower in title or kw_lower in cid:
+            score = 500 - len(title)
+        elif kw_ns and kw_ns in title_ns:
+            score = 200 - len(title)
+        else:
+            continue
+        scored.append((score, c))
+    scored.sort(key=lambda t: -t[0])
+    return [c for _, c in scored]
+
+
+def _highlight_match(text: str, kw: str) -> str:
+    """text 에서 kw 매칭 부분을 markdown bold 처리 (case-insensitive)."""
+    if not text or not kw:
+        return text
+    idx = text.lower().find(kw.lower())
+    if idx < 0:
+        return text
+    return f"{text[:idx]}**{text[idx:idx + len(kw)]}**{text[idx + len(kw):]}"
+
+
+def _render_content_search_section(
+    *,
+    state_key: str,
+    search_key: str,
+    key_suffix: str,
+    all_contents: list[dict],
+    current_ids: list[str],
+) -> None:
+    """검색 input + 자동완성 결과 표시 + Enter 시 첫 결과 자동 추가."""
+    def _on_submit() -> None:
+        kw = (st.session_state.get(search_key) or "").strip()
+        if not kw:
+            return
+        ids_now = list(st.session_state.get(state_key, []))
+        if len(ids_now) >= 3:
+            return
+        matches = [
+            c for c in _rank_matches(all_contents, kw)
+            if c["id"] not in ids_now
+        ]
+        if matches:
+            st.session_state[state_key] = ids_now + [matches[0]["id"]]
+            st.session_state[search_key] = ""
+
+    search = st.text_input(
+        "콘텐츠 검색 (Enter 로 첫 결과 자동 추가)",
+        placeholder="예: 프리미어리그, 3346723",
+        key=search_key,
+        on_change=_on_submit,
+    )
+    if not search or not search.strip():
+        if not current_ids:
+            st.caption("위 검색창에 콘텐츠 제목 또는 ID 를 입력하세요.")
+        return
+
+    kw = search.strip()
+    ranked = _rank_matches(all_contents, kw)
+    available = [c for c in ranked if c["id"] not in current_ids]
+    full = len(current_ids) >= 3
+
+    more_key = f"show_more_search{key_suffix}"
+    if more_key not in st.session_state:
+        st.session_state[more_key] = False
+    limit = 30 if st.session_state[more_key] else 10
+    display = available[:limit]
+
+    if not display:
+        st.caption("검색 결과 없음")
+        return
+
+    hint = " · Enter 로 첫 결과 자동 추가" if not full else " · 최대 3개 선택됨"
+    st.caption(
+        f"검색 결과 {len(available)}개 중 상위 {len(display)}개{hint}"
+    )
+    for c in display:
+        cid = c["id"]
+        title = c.get("title") or ""
+        title_md = _highlight_match(title, kw) if title else ""
+        row = st.columns([6, 1])
+        if title_md:
+            row[0].markdown(f"📺 {title_md} `({cid})`")
+        else:
+            row[0].markdown(f"📺 `({cid})`")
+        if row[1].button(
+            "➕ 추가",
+            key=f"add_{cid}{key_suffix}",
+            disabled=full,
+            use_container_width=True,
+        ):
+            st.session_state[state_key] = current_ids + [cid]
+            st.rerun()
+
+    if len(available) > limit:
+        if st.button(
+            f"더 보기 (남은 {len(available) - limit}개)",
+            key=f"more_search{key_suffix}",
+            use_container_width=True,
+        ):
+            st.session_state[more_key] = True
+            st.rerun()
+
+
 @st.cache_data(show_spinner=False)
 def extract_sales_categories(file_datas: list[tuple[str, bytes]]) -> list[str]:
     """업로드된 파일들의 '정산금(rs기준)' 행 중 매출 종류 유니크 값 수집."""
@@ -1660,13 +1779,6 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
 
     if all_contents:
         st.caption(f"제목 또는 콘텐츠 ID 검색 (최대 3개 · 총 {len(all_contents):,}개)")
-        search = st.text_input(
-            "콘텐츠 검색",
-            key=f"content_search{key_suffix}",
-            placeholder="예: 프리미어리그, 3346723",
-            label_visibility="collapsed",
-        )
-
         if current_ids:
             st.markdown("**선택된 콘텐츠**")
             for cid in list(current_ids):
@@ -1679,35 +1791,13 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
                 if cols[1].button("제거", key=f"rm_{cid}{key_suffix}"):
                     st.session_state[state_key] = [x for x in current_ids if x != cid]
                     st.rerun()
-
-        if search.strip():
-            kw = search.strip().lower()
-            matches = [
-                c for c in all_contents
-                if kw in (c.get("title") or "").lower() or kw in str(c.get("id", ""))
-            ][:30]
-            already = set(current_ids)
-            full = len(current_ids) >= 3
-            if matches:
-                st.caption(f"검색 결과 상위 {len(matches)}개")
-                for c in matches:
-                    cid = c["id"]
-                    if cid in already:
-                        continue
-                    label = _format_content_option(c)
-                    if st.button(
-                        f"➕ {label}",
-                        key=f"add_{cid}{key_suffix}",
-                        use_container_width=True,
-                        disabled=full,
-                    ):
-                        st.session_state[state_key] = current_ids + [cid]
-                        st.rerun()
-            else:
-                st.caption("검색 결과 없음")
-        else:
-            if not current_ids:
-                st.caption("위 검색창에 콘텐츠 제목 또는 ID 를 입력하세요.")
+        _render_content_search_section(
+            state_key=state_key,
+            search_key=f"content_search{key_suffix}",
+            key_suffix=key_suffix,
+            all_contents=all_contents,
+            current_ids=current_ids,
+        )
     else:
         st.caption("콘텐츠 목록을 추출하지 못했습니다.")
 
@@ -1759,36 +1849,13 @@ def _render_quick_content_picker() -> dict | None:
                 st.session_state[state_key] = [x for x in current_ids if x != cid]
                 st.rerun()
 
-    search = st.text_input(
-        "콘텐츠 검색 (제목 또는 ID)",
-        key="quick_content_search",
-        placeholder="예: 프리미어리그, 3346723",
+    _render_content_search_section(
+        state_key=state_key,
+        search_key="quick_content_search",
+        key_suffix="_quick",
+        all_contents=all_contents,
+        current_ids=current_ids,
     )
-    if search.strip():
-        kw = search.strip().lower()
-        matches = [
-            c for c in all_contents
-            if kw in (c.get("title") or "").lower() or kw in str(c.get("id", ""))
-        ][:30]
-        already = set(current_ids)
-        full = len(current_ids) >= 3
-        if matches:
-            st.caption(f"검색 결과 상위 {len(matches)}개")
-            for c in matches:
-                cid = c["id"]
-                if cid in already:
-                    continue
-                label = _format_content_option(c)
-                if st.button(
-                    f"➕ {label}",
-                    key=f"q_add_{cid}",
-                    use_container_width=True,
-                    disabled=full,
-                ):
-                    st.session_state[state_key] = current_ids + [cid]
-                    st.rerun()
-        else:
-            st.caption("검색 결과 없음")
 
     if st.button("재조회", type="primary", key="quick_run"):
         if not current_ids:
