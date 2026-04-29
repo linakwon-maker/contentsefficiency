@@ -337,6 +337,7 @@ st.markdown(
         color: {_TEXT_MUTED} !important;
         font-size: 0.82rem !important;
         font-weight: 600;
+        margin-bottom: 0.6rem !important;
     }}
     /* '2022 합계' / '전체 합계' 등 라벨에 연한 핑크 하이라이트 (글자에 타이트) */
     [data-testid="stMetricLabel"] > div,
