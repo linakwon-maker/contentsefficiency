@@ -1257,13 +1257,17 @@ def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
     return labels
 
 
-def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataFrame:
+def compute_flat_estimates(
+    df: pd.DataFrame,
+    ordered_ids: list[str],
+    depreciation: float = FLAT_DEPRECIATION,
+) -> pd.DataFrame:
     """각 콘텐츠의 FLAT 예상 금액 계산.
 
     - 첫 매출월 = revenue > 0 인 가장 이른 year-month
     - 그 월부터 연속 12개월 window 슬라이스 (없는 월은 NaN 처리)
     - window 내 매출 평균 (NaN 제외, 0은 포함)
-    - FLAT 1년 예상 = 평균 × 12 × FLAT_DEPRECIATION (0.7)
+    - FLAT 1년 예상 = 평균 × 12 × depreciation (기본 0.7)
     - FLAT 3년/5년 = FLAT 1년 × 3 / × 5
     - 계산 기간 컬럼: window 안 NaN이 아닌 월 수 (12면 정상, 미만이면 데이터 부족)
     """
@@ -1309,7 +1313,7 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
         avg = window["revenue"].mean()
         valid_months = int(window["revenue"].notna().sum())
 
-        flat_1y = avg * 12 * FLAT_DEPRECIATION if pd.notna(avg) else float("nan")
+        flat_1y = avg * 12 * depreciation if pd.notna(avg) else float("nan")
         flat_3y = flat_1y * 3 if pd.notna(flat_1y) else float("nan")
         flat_5y = flat_1y * 5 if pd.notna(flat_1y) else float("nan")
 
@@ -1414,7 +1418,11 @@ def _apply_thousands_format(worksheet, *, has_index: bool) -> None:
                 cell.number_format = _NUM_FORMAT_THOUSANDS
 
 
-def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
+def build_excel_export(
+    df: pd.DataFrame,
+    ordered_ids: list[str],
+    depreciation: float = FLAT_DEPRECIATION,
+) -> bytes:
     """현재 조회 결과를 다중 시트 엑셀로 직렬화."""
     labels = _content_labels(df, ordered_ids)
     buffer = BytesIO()
@@ -1445,7 +1453,7 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
         _apply_thousands_format(writer.sheets["연간 합계"], has_index=True)
 
         # 3) FLAT 예상
-        compute_flat_estimates(df, ordered_ids).to_excel(
+        compute_flat_estimates(df, ordered_ids, depreciation=depreciation).to_excel(
             writer, sheet_name="FLAT 예상", index=False,
         )
         _apply_thousands_format(writer.sheets["FLAT 예상"], has_index=False)
@@ -1491,19 +1499,32 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
 
 
 @st.cache_data(show_spinner=False)
-def _build_excel_export_cached(df: pd.DataFrame, ordered_ids: tuple) -> bytes:
+def _build_excel_export_cached(
+    df: pd.DataFrame, ordered_ids: tuple, depreciation: float = FLAT_DEPRECIATION,
+) -> bytes:
     """다운로드 버튼은 매 rerun 마다 data 인자를 재평가하므로 캐시."""
-    return build_excel_export(df, list(ordered_ids))
+    return build_excel_export(df, list(ordered_ids), depreciation=depreciation)
 
 
 def render_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> None:
     if df.empty:
         return
-    result = compute_flat_estimates(df, ordered_ids)
+
+    # 감가 계수 — 기본 0.7. 사용자가 직접 조정 가능.
+    dep_cols = st.columns([1, 3])
+    with dep_cols[0]:
+        depreciation = st.number_input(
+            "감가 계수",
+            min_value=0.0, max_value=1.0,
+            value=float(st.session_state.get("flat_depreciation", FLAT_DEPRECIATION)),
+            step=0.05, format="%.2f",
+            key="flat_depreciation",
+        )
     st.caption(
-        f"**계산 방식**: 첫 매출월부터 연속 12개월 평균 매출 × 12 × {FLAT_DEPRECIATION}(감가) "
+        f"**계산 방식**: 첫 매출월부터 연속 12개월 평균 매출 × 12 × {depreciation:.2f}(감가) "
         f"= FLAT 1년 예상. 3년·5년은 각각 1년 예상 × 3, × 5."
     )
+    result = compute_flat_estimates(df, ordered_ids, depreciation=depreciation)
 
     num_fmt = {
         "첫 12개월 평균": "{:,.0f}",
@@ -2015,7 +2036,12 @@ def render_result_page() -> None:
         )
     with download_col:
         try:
-            excel_bytes = _build_excel_export_cached(df, tuple(found_ids))
+            excel_bytes = _build_excel_export_cached(
+                df, tuple(found_ids),
+                depreciation=float(
+                    st.session_state.get("flat_depreciation", FLAT_DEPRECIATION)
+                ),
+            )
             st.download_button(
                 "📥 엑셀 다운로드",
                 data=excel_bytes,
