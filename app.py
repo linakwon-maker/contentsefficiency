@@ -75,10 +75,22 @@ _BORDER = "#E5E5E5"
 _BORDER_SOFT = "#ECECEC"
 _TEXT = "#1A1A1A"
 _TEXT_MUTED = "#6B6B6B"
+# Plotly 차트용 폰트 스택 (CSS 와 동일한 fallback 체인)
+_PLOTLY_FONT_FAMILY = (
+    '"Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, '
+    '"Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif'
+)
 
 st.markdown(
     f"""
     <style>
+    /* 글로벌 폰트: Apple SD Gothic Neo (macOS/iOS 기본 한글),
+       다른 OS·브라우저는 시스템·Pretendard·Malgun Gothic 으로 fallback */
+    html, body, .stApp, [class*="st-"], button, input, select, textarea, label {{
+        font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
+            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
+    }}
+
     /* 페이지: 흰톤 베이스 (원복) */
     .stApp {{
         background: linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 240px) no-repeat;
@@ -1350,12 +1362,15 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
         yaxis_title="",
         hovermode="x unified",
         height=560,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#1A1A1A")),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.45,
+            font=dict(color="#1A1A1A", family=_PLOTLY_FONT_FAMILY),
+        ),
         dragmode="zoom",
         # 라이트 톤 (원복) + 액센트만 핑크 유지
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FAFAFA",
-        font=dict(color="#1A1A1A"),
+        font=dict(color="#1A1A1A", family=_PLOTLY_FONT_FAMILY),
         margin=dict(l=20, r=20, t=80, b=20),
     )
     fig.update_xaxes(
@@ -1370,7 +1385,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
             x=0, y=1.0, xanchor="left", yanchor="bottom",
             bgcolor="#F0F0F0",
             activecolor="#FF3D7F",
-            font=dict(color="#1A1A1A", size=12),
+            font=dict(color="#1A1A1A", size=12, family=_PLOTLY_FONT_FAMILY),
         ),
         rangeslider=dict(visible=True, thickness=0.06, bgcolor="#F5F5F5"),
         type="date",
