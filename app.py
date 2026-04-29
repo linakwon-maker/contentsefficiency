@@ -68,24 +68,20 @@ if _LOGO_PATH.exists():
 _WATCHA_PINK = "#FF3D7F"
 _PINK_SOFT = "#FFB3CC"
 _PINK_TINT = "#FFE5EE"
-_BG_PAGE = "#FFFAFC"
-_BG_SOFT = "#FFF1F5"
-_BG_CARD = "#FFF6F9"
-_BORDER = "#FFD9E3"
-_BORDER_SOFT = "#FFE9EE"
-_TEXT = "#2B1A20"
-_TEXT_MUTED = "#8A6B74"
+_BG_PAGE = "#FFFFFF"
+_BG_SOFT = "#FAFAFA"
+_BG_CARD = "#F7F7F7"
+_BORDER = "#E5E5E5"
+_BORDER_SOFT = "#ECECEC"
+_TEXT = "#1A1A1A"
+_TEXT_MUTED = "#6B6B6B"
 
 st.markdown(
     f"""
     <style>
-    /* 페이지: 베이스에 부드러운 핑크 그라데이션 — 귀여운 라이트 톤 */
+    /* 페이지: 흰톤 베이스 (원복) */
     .stApp {{
-        background:
-            radial-gradient(circle at 12% -8%, {_PINK_TINT} 0%, transparent 38%),
-            radial-gradient(circle at 92% 6%, #FFF6E8 0%, transparent 32%),
-            linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 600px) no-repeat;
-        background-attachment: fixed;
+        background: linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 240px) no-repeat;
         color: {_TEXT};
     }}
     .block-container {{
@@ -131,9 +127,9 @@ st.markdown(
         opacity: 0.9;
     }}
 
-    /* 사이드바 — 부드러운 핑크 패널 */
+    /* 사이드바 — 미세하게 더 회색 톤 */
     [data-testid="stSidebar"] {{
-        background: linear-gradient(180deg, {_BG_SOFT} 0%, {_BG_PAGE} 100%);
+        background-color: {_BG_SOFT};
         border-right: 1px solid {_BORDER_SOFT};
     }}
     [data-testid="stSidebar"] h1,
@@ -201,24 +197,24 @@ st.markdown(
         outline: none !important;
     }}
 
-    /* 파일 업로더 — 점선 핑크 카드 */
+    /* 파일 업로더 — 점선 핑크 보더, 배경은 흰톤 */
     [data-testid="stFileUploader"] section {{
         border-radius: 18px !important;
         border: 2px dashed {_PINK_SOFT} !important;
-        background: {_BG_CARD} !important;
+        background: white !important;
         transition: background 0.2s ease;
     }}
     [data-testid="stFileUploader"] section:hover {{
         background: {_PINK_TINT} !important;
     }}
 
-    /* 메트릭 카드 — 핑크 그라디언트 + 라운드 큼 */
+    /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
     [data-testid="stMetric"] {{
-        background: linear-gradient(135deg, #FFFFFF 0%, {_PINK_TINT} 130%);
+        background-color: white;
         border: 1.5px solid {_BORDER_SOFT};
         border-radius: 20px;
         padding: 1.1rem 1.3rem;
-        box-shadow: 0 4px 14px rgba(255, 61, 127, 0.06);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
         transition: transform 0.1s ease, box-shadow 0.15s ease;
     }}
     [data-testid="stMetric"]:hover {{
@@ -236,13 +232,13 @@ st.markdown(
         font-weight: 600;
     }}
 
-    /* expander — 핑크 카드 */
+    /* expander — 라이트 카드 */
     [data-testid="stExpander"] {{
         background-color: {_BG_CARD};
         border: 1.5px solid {_BORDER_SOFT};
         border-radius: 18px;
         overflow: hidden;
-        box-shadow: 0 2px 10px rgba(255, 61, 127, 0.04);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
     }}
     [data-testid="stExpander"] summary {{
         font-weight: 600;
@@ -252,12 +248,12 @@ st.markdown(
         background-color: {_PINK_TINT};
     }}
 
-    /* 데이터프레임/표 — 라운드 큼 + 핑크 보더 */
+    /* 데이터프레임/표 — 라운드 + 옅은 보더 */
     [data-testid="stDataFrame"], [data-testid="stTable"] {{
         border-radius: 16px;
         overflow: hidden;
         border: 1.5px solid {_BORDER_SOFT};
-        box-shadow: 0 2px 10px rgba(255, 61, 127, 0.04);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
     }}
 
     /* alert(info/warning/success) — 둥글고 핑크 톤 */
@@ -1354,12 +1350,12 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
         yaxis_title="",
         hovermode="x unified",
         height=560,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#2B1A20")),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#1A1A1A")),
         dragmode="zoom",
-        # 귀여운 라이트 핑크 톤
-        paper_bgcolor="#FFFAFC",
-        plot_bgcolor="#FFF6F9",
-        font=dict(color="#2B1A20"),
+        # 라이트 톤 (원복) + 액센트만 핑크 유지
+        paper_bgcolor="#FFFFFF",
+        plot_bgcolor="#FAFAFA",
+        font=dict(color="#1A1A1A"),
         margin=dict(l=20, r=20, t=80, b=20),
     )
     fig.update_xaxes(
@@ -1372,16 +1368,16 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 dict(step="all", label="전체"),
             ],
             x=0, y=1.0, xanchor="left", yanchor="bottom",
-            bgcolor="#FFE5EE",
+            bgcolor="#F0F0F0",
             activecolor="#FF3D7F",
-            font=dict(color="#2B1A20", size=12),
+            font=dict(color="#1A1A1A", size=12),
         ),
-        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#FFF1F5"),
+        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#F5F5F5"),
         type="date",
-        gridcolor="#FFE9EE",
-        zerolinecolor="#FFE9EE",
+        gridcolor="#ECECEC",
+        zerolinecolor="#ECECEC",
     )
-    fig.update_yaxes(gridcolor="#FFE9EE", zerolinecolor="#FFE9EE")
+    fig.update_yaxes(gridcolor="#ECECEC", zerolinecolor="#ECECEC")
     st.plotly_chart(
         fig,
         use_container_width=True,
