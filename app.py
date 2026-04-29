@@ -90,6 +90,17 @@ st.markdown(
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
             "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
     }}
+    /* 단, Streamlit 의 Material Icons / Symbols 아이콘 폰트는 예외 —
+       ligature 로 렌더되므로 한글 폰트가 강제되면 글자가 깨져 보임 */
+    .material-icons, .material-icons-outlined,
+    .material-symbols-outlined, .material-symbols-rounded,
+    i.material-icons, i.material-icons-outlined,
+    i.material-symbols-outlined, i.material-symbols-rounded,
+    span[class*="material-icons"], span[class*="material-symbols"],
+    [data-testid="stIconMaterial"], [data-testid="stIconMaterial"] * {{
+        font-family: "Material Symbols Outlined", "Material Symbols Rounded",
+            "Material Icons", "Material Icons Outlined" !important;
+    }}
 
     /* 페이지: 흰톤 베이스 (원복) */
     .stApp {{
