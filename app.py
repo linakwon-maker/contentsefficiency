@@ -1219,8 +1219,12 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
     grand_total = float(yearly["total"].sum())
     grand_avg = float(df["revenue"].mean()) if df["revenue"].notna().any() else 0.0
 
-    # 연도별 + 전체 합계 — 한 줄에 최대 5개씩 grid 로 표시.
-    items: list[tuple[str, str, str]] = []
+    # 전체 합계가 1번 → 그 뒤로 연도별 합계. 한 줄에 최대 5개씩 grid 표시.
+    items: list[tuple[str, str, str]] = [(
+        "전체 합계",
+        f"{grand_total:,.0f}",
+        f"월평균 {grand_avg:,.0f}" if pd.notna(grand_avg) else "월평균 -",
+    )]
     for _, row in yearly.iterrows():
         avg_val = row["avg"]
         items.append((
@@ -1228,11 +1232,6 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
             f"{row['total']:,.0f}",
             f"월평균 {avg_val:,.0f}" if pd.notna(avg_val) else "월평균 -",
         ))
-    items.append((
-        "전체 합계",
-        f"{grand_total:,.0f}",
-        f"월평균 {grand_avg:,.0f}" if pd.notna(grand_avg) else "월평균 -",
-    ))
 
     per_row = 5
     for start in range(0, len(items), per_row):
