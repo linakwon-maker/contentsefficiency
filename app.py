@@ -102,6 +102,16 @@ st.markdown(
         display: none !important;
     }}
 
+    /* Expander 헤더의 chevron(▶) 아이콘이 Material Icons ligature
+       'arrow_right' 텍스트로 그대로 보이는 문제 → 아이콘 element 숨김.
+       (summary 클릭만으로 토글 가능하므로 화살표 없어도 동작 OK) */
+    [data-testid="stExpander"] summary svg,
+    [data-testid="stExpander"] summary i,
+    [data-testid="stExpander"] summary [class*="icon"],
+    details[data-testid="stExpander"] summary::-webkit-details-marker {{
+        display: none !important;
+    }}
+
     /* multiselect/selectbox dropdown 은 portal 로 <body> 직속에 마운트.
        stApp/stHeader 외 모든 body 직속 div 와 그 자손에 색·폰트 강제. */
     body > div:not([data-testid="stApp"]):not([data-testid="stHeader"]):not([data-testid="stStatusWidget"]),
@@ -1421,7 +1431,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     st.caption("빨간 X = 전월 대비 30%↓  ·  드래그로 영역 확대 · 더블클릭으로 리셋")
 
     fig.update_layout(
-        title=None,
+        title={"text": "", "x": 0},
         xaxis_title="",
         yaxis_title="",
         hovermode="x unified",
