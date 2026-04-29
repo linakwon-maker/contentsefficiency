@@ -224,6 +224,32 @@ st.markdown(
     [data-testid="stFileUploader"] section:hover {{
         background: {_PINK_TINT} !important;
     }}
+    /* 환경/버전에 따라 button 안 텍스트('upload' 등) 가 두 번 렌더되는
+       문제를 해결: 기존 자식 모두 가리고 ::after 로 라벨 한 번 주입 */
+    [data-testid="stFileUploader"] button {{
+        position: relative !important;
+        color: transparent !important;
+        overflow: hidden !important;
+        min-height: 38px !important;
+    }}
+    [data-testid="stFileUploader"] button > * {{
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }}
+    [data-testid="stFileUploader"] button::after {{
+        content: "파일 선택";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: {_TEXT};
+        font-size: 0.88rem;
+        font-weight: 600;
+        font-family: inherit;
+        letter-spacing: 0;
+        visibility: visible !important;
+    }}
 
     /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
     [data-testid="stMetric"] {{
