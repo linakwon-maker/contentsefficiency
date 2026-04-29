@@ -65,20 +65,27 @@ if _LOGO_PATH.exists():
 # 글로벌 테마 (왓챠피디아 톤: 다크 차콜 + 핑크 액센트 + 둥근 카드)
 # --------------------------------------------------------------------------
 
-_WATCHA_PINK = "#FF0558"
-_BG_PAGE = "#FFFFFF"
-_BG_SOFT = "#FAFAFA"
-_BG_CARD = "#F5F5F5"
-_BORDER = "#ECECEC"
-_TEXT = "#1A1A1A"
-_TEXT_MUTED = "#6B6B6B"
+_WATCHA_PINK = "#FF3D7F"
+_PINK_SOFT = "#FFB3CC"
+_PINK_TINT = "#FFE5EE"
+_BG_PAGE = "#FFFAFC"
+_BG_SOFT = "#FFF1F5"
+_BG_CARD = "#FFF6F9"
+_BORDER = "#FFD9E3"
+_BORDER_SOFT = "#FFE9EE"
+_TEXT = "#2B1A20"
+_TEXT_MUTED = "#8A6B74"
 
 st.markdown(
     f"""
     <style>
-    /* 페이지: 흰톤 베이스에 살짝 오프화이트 그라데이션 — 왓챠피디아 라이트 톤 */
+    /* 페이지: 베이스에 부드러운 핑크 그라데이션 — 귀여운 라이트 톤 */
     .stApp {{
-        background: linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 240px) no-repeat;
+        background:
+            radial-gradient(circle at 12% -8%, {_PINK_TINT} 0%, transparent 38%),
+            radial-gradient(circle at 92% 6%, #FFF6E8 0%, transparent 32%),
+            linear-gradient(180deg, {_BG_PAGE} 0%, {_BG_SOFT} 600px) no-repeat;
+        background-attachment: fixed;
         color: {_TEXT};
     }}
     .block-container {{
@@ -87,124 +94,185 @@ st.markdown(
         max-width: 1240px;
     }}
 
-    /* 타이포 — 강한 대비, 시네마틱 위계 */
+    /* 타이포 — 부드럽고 둥근 위계 */
     h1, h2, h3 {{ color: {_TEXT}; }}
     h1 {{ font-weight: 800; letter-spacing: -0.02em; }}
     h2 {{
         font-weight: 700;
         letter-spacing: -0.01em;
-        border-left: 3px solid {_WATCHA_PINK};
-        padding-left: 0.6rem;
-        margin-top: 2rem !important;
+        border-left: none !important;
+        padding-left: 0 !important;
+        margin-top: 2.2rem !important;
+        position: relative;
+        padding-left: 1.4rem !important;
     }}
-    h3 {{ font-weight: 600; color: #2A2A2A; }}
+    h2::before {{
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 0.7rem;
+        height: 0.7rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, {_WATCHA_PINK} 0%, {_PINK_SOFT} 100%);
+        box-shadow: 0 0 0 4px {_PINK_TINT};
+    }}
+    h3 {{ font-weight: 600; color: #4A2630; }}
     .stCaption, [data-testid="stCaptionContainer"] {{
         color: {_TEXT_MUTED} !important;
     }}
 
-    /* 디바이더 — 얇고 옅게 */
+    /* 디바이더 — 얇고 핑크 그라데이션 */
     hr {{
-        border-color: {_BORDER} !important;
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent 0%, {_BORDER} 30%, {_PINK_SOFT} 50%, {_BORDER} 70%, transparent 100%) !important;
         opacity: 0.9;
     }}
 
-    /* 사이드바 — 미세하게 더 회색 톤 패널 */
+    /* 사이드바 — 부드러운 핑크 패널 */
     [data-testid="stSidebar"] {{
-        background-color: {_BG_SOFT};
-        border-right: 1px solid {_BORDER};
+        background: linear-gradient(180deg, {_BG_SOFT} 0%, {_BG_PAGE} 100%);
+        border-right: 1px solid {_BORDER_SOFT};
     }}
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {{
-        border-left: none;
-        padding-left: 0;
+        border-left: none !important;
+        padding-left: 0 !important;
         font-size: 0.95rem;
         color: {_TEXT_MUTED};
         text-transform: uppercase;
         letter-spacing: 0.08em;
     }}
+    [data-testid="stSidebar"] h2::before {{ display: none; }}
 
-    /* 버튼 — 왓챠 핑크 채움, 둥글게 */
+    /* 버튼 — 핑크 그라데이션 + 부드러운 그림자 */
     .stButton > button[kind="primary"],
     .stDownloadButton > button[kind="primary"],
     div[data-testid="stFormSubmitButton"] > button {{
-        background-color: {_WATCHA_PINK};
+        background: linear-gradient(135deg, {_WATCHA_PINK} 0%, #FF6BA0 100%);
         color: white;
         border: none;
         border-radius: 999px;
-        padding: 0.55rem 1.4rem;
-        font-weight: 600;
-        transition: transform 0.05s ease, filter 0.15s ease;
+        padding: 0.6rem 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        box-shadow: 0 6px 18px rgba(255, 61, 127, 0.25);
+        transition: transform 0.08s ease, box-shadow 0.15s ease, filter 0.15s ease;
     }}
     .stButton > button[kind="primary"]:hover,
     .stDownloadButton > button[kind="primary"]:hover,
     div[data-testid="stFormSubmitButton"] > button:hover {{
-        filter: brightness(1.08);
-        transform: translateY(-1px);
+        filter: brightness(1.05);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(255, 61, 127, 0.32);
     }}
-    .stButton > button[kind="secondary"] {{
+    .stButton > button[kind="secondary"],
+    .stDownloadButton > button[kind="secondary"] {{
         border-radius: 999px;
-        border: 1px solid {_BORDER};
+        border: 1.5px solid {_BORDER};
         background-color: white;
         color: {_TEXT};
+        font-weight: 600;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+    }}
+    .stButton > button[kind="secondary"]:hover,
+    .stDownloadButton > button[kind="secondary"]:hover {{
+        background-color: {_PINK_TINT};
+        border-color: {_PINK_SOFT};
     }}
 
-    /* 입력 위젯 — 옅은 카드 톤 */
+    /* 입력 위젯 — 둥글게 + 핑크 포커스 */
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input,
     [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
     [data-testid="stMultiSelect"] div[data-baseweb="select"] > div {{
         background-color: white;
-        border-radius: 10px;
-        border: 1px solid {_BORDER};
+        border-radius: 14px;
+        border: 1.5px solid {_BORDER_SOFT};
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }}
+    [data-testid="stTextInput"] input:focus,
+    [data-testid="stNumberInput"] input:focus {{
+        border-color: {_WATCHA_PINK} !important;
+        box-shadow: 0 0 0 4px {_PINK_TINT} !important;
+        outline: none !important;
     }}
 
-    /* 메트릭 카드 — 라운드 + 미세 보더 */
+    /* 파일 업로더 — 점선 핑크 카드 */
+    [data-testid="stFileUploader"] section {{
+        border-radius: 18px !important;
+        border: 2px dashed {_PINK_SOFT} !important;
+        background: {_BG_CARD} !important;
+        transition: background 0.2s ease;
+    }}
+    [data-testid="stFileUploader"] section:hover {{
+        background: {_PINK_TINT} !important;
+    }}
+
+    /* 메트릭 카드 — 핑크 그라디언트 + 라운드 큼 */
     [data-testid="stMetric"] {{
-        background-color: {_BG_CARD};
-        border: 1px solid {_BORDER};
-        border-radius: 14px;
-        padding: 1rem 1.2rem;
+        background: linear-gradient(135deg, #FFFFFF 0%, {_PINK_TINT} 130%);
+        border: 1.5px solid {_BORDER_SOFT};
+        border-radius: 20px;
+        padding: 1.1rem 1.3rem;
+        box-shadow: 0 4px 14px rgba(255, 61, 127, 0.06);
+        transition: transform 0.1s ease, box-shadow 0.15s ease;
+    }}
+    [data-testid="stMetric"]:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(255, 61, 127, 0.12);
     }}
     [data-testid="stMetricValue"] {{
-        font-weight: 700;
+        font-weight: 800;
         letter-spacing: -0.01em;
         color: {_TEXT};
     }}
     [data-testid="stMetricLabel"] {{
         color: {_TEXT_MUTED} !important;
         font-size: 0.82rem !important;
+        font-weight: 600;
     }}
 
-    /* expander — 카드처럼 */
+    /* expander — 핑크 카드 */
     [data-testid="stExpander"] {{
         background-color: {_BG_CARD};
-        border: 1px solid {_BORDER};
-        border-radius: 14px;
+        border: 1.5px solid {_BORDER_SOFT};
+        border-radius: 18px;
         overflow: hidden;
+        box-shadow: 0 2px 10px rgba(255, 61, 127, 0.04);
     }}
     [data-testid="stExpander"] summary {{
         font-weight: 600;
         color: {_TEXT};
     }}
+    [data-testid="stExpander"] summary:hover {{
+        background-color: {_PINK_TINT};
+    }}
 
-    /* 데이터프레임/표 — 둥근 모서리 */
+    /* 데이터프레임/표 — 라운드 큼 + 핑크 보더 */
     [data-testid="stDataFrame"], [data-testid="stTable"] {{
-        border-radius: 12px;
+        border-radius: 16px;
         overflow: hidden;
-        border: 1px solid {_BORDER};
+        border: 1.5px solid {_BORDER_SOFT};
+        box-shadow: 0 2px 10px rgba(255, 61, 127, 0.04);
     }}
 
-    /* alert(info/warning/success) — 더 차분한 톤 */
+    /* alert(info/warning/success) — 둥글고 핑크 톤 */
     [data-testid="stAlert"] {{
-        border-radius: 12px;
-        border: 1px solid {_BORDER};
+        border-radius: 16px;
+        border: 1.5px solid {_BORDER_SOFT};
     }}
 
-    /* 스크롤바 살짝 미니멀 */
+    /* 스크롤바 — 핑크 미니멀 */
     ::-webkit-scrollbar {{ width: 10px; height: 10px; }}
-    ::-webkit-scrollbar-thumb {{ background: #D4D4D4; border-radius: 999px; }}
-    ::-webkit-scrollbar-thumb:hover {{ background: #BDBDBD; }}
+    ::-webkit-scrollbar-thumb {{
+        background: {_PINK_SOFT};
+        border-radius: 999px;
+    }}
+    ::-webkit-scrollbar-thumb:hover {{ background: {_WATCHA_PINK}; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -220,8 +288,8 @@ def _render_title(title: str, *, level: str = "h1") -> None:
             f"""
             <div style="display:flex; align-items:center; gap:14px; margin:0 0 1rem 0;">
                 <img src="data:image/png;base64,{b64}"
-                     style="width:44px; height:44px; border-radius:10px;
-                            box-shadow:0 2px 12px rgba(255,5,88,0.25);" />
+                     style="width:46px; height:46px; border-radius:14px;
+                            box-shadow:0 4px 16px rgba(255,61,127,0.32);" />
                 <{level} style="margin:0; line-height:1.1; font-weight:800;
                                  letter-spacing:-0.02em; border-left:none; padding-left:0;">
                     {title}
@@ -1243,8 +1311,8 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     plot_df = plot_df.sort_values(["content_id", "date"]).reset_index(drop=True)
 
     fig = go.Figure()
-    # 왓챠피디아 톤: 핑크 메인 + 보조 컬러는 차분한 시네마틱 톤
-    palette = ["#FF0558", "#5BC0EB", "#F7B538"]
+    # 귀여운 라이트 톤: 핑크 메인 + 민트·버터 보조
+    palette = ["#FF3D7F", "#7AC7E0", "#FFD580"]
     chart_labels = _content_labels(df, list(plot_df["content_id"].unique()))
 
     for idx, (cid, group) in enumerate(plot_df.groupby("content_id")):
@@ -1286,13 +1354,12 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
         yaxis_title="",
         hovermode="x unified",
         height=560,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#1A1A1A")),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.45, font=dict(color="#2B1A20")),
         dragmode="zoom",
-        # 왓챠피디아 라이트 톤
-        paper_bgcolor="#FFFFFF",
-        plot_bgcolor="#FAFAFA",
-        font=dict(color="#1A1A1A"),
-        # 셀렉터 버튼이 위에 자리잡을 공간 확보
+        # 귀여운 라이트 핑크 톤
+        paper_bgcolor="#FFFAFC",
+        plot_bgcolor="#FFF6F9",
+        font=dict(color="#2B1A20"),
         margin=dict(l=20, r=20, t=80, b=20),
     )
     fig.update_xaxes(
@@ -1304,18 +1371,17 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 dict(count=3, label="3년", step="year", stepmode="backward"),
                 dict(step="all", label="전체"),
             ],
-            # 버튼을 차트 plot 영역 바로 위에 배치 (제목 텍스트 없음 → 겹칠 게 없음)
             x=0, y=1.0, xanchor="left", yanchor="bottom",
-            bgcolor="#F0F0F0",
-            activecolor="#FF0558",
-            font=dict(color="#1A1A1A", size=12),
+            bgcolor="#FFE5EE",
+            activecolor="#FF3D7F",
+            font=dict(color="#2B1A20", size=12),
         ),
-        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#F5F5F5"),
+        rangeslider=dict(visible=True, thickness=0.06, bgcolor="#FFF1F5"),
         type="date",
-        gridcolor="#ECECEC",
-        zerolinecolor="#ECECEC",
+        gridcolor="#FFE9EE",
+        zerolinecolor="#FFE9EE",
     )
-    fig.update_yaxes(gridcolor="#ECECEC", zerolinecolor="#ECECEC")
+    fig.update_yaxes(gridcolor="#FFE9EE", zerolinecolor="#FFE9EE")
     st.plotly_chart(
         fig,
         use_container_width=True,
