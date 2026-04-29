@@ -101,14 +101,30 @@ st.markdown(
         display: none !important;
     }}
 
-    /* Expander 헤더의 chevron(▶) 아이콘이 Material Icons ligature
-       'arrow_right' 텍스트로 그대로 보이는 문제 → 아이콘 element 숨김.
+    /* Expander 헤더의 chevron(▼) 자리에 'arrow_right' / 'arrow_drop_down'
+       Material ligature 텍스트가 한글 폰트로 깨져 노출되는 문제 → summary
+       안의 모든 가능한 아이콘 element 를 셀렉터 광범위하게 숨김.
        (summary 클릭만으로 토글 가능하므로 화살표 없어도 동작 OK) */
     [data-testid="stExpander"] summary svg,
     [data-testid="stExpander"] summary i,
     [data-testid="stExpander"] summary [class*="icon"],
-    details[data-testid="stExpander"] summary::-webkit-details-marker {{
+    [data-testid="stExpander"] summary [class*="Icon"],
+    [data-testid="stExpander"] summary [class*="material"],
+    [data-testid="stExpander"] summary [class*="Material"],
+    [data-testid="stExpander"] summary [data-testid*="icon"],
+    [data-testid="stExpander"] summary [data-testid*="Icon"],
+    [data-testid="stExpander"] summary [data-testid*="Chevron"],
+    [data-testid="stExpander"] summary [data-testid*="chevron"],
+    [data-testid="stExpander"] summary [aria-label*="rrow"],
+    [data-testid="stExpander"] summary [aria-label*="hevron"],
+    details[data-testid="stExpander"] summary::-webkit-details-marker,
+    details[data-testid="stExpander"] summary::marker {{
         display: none !important;
+        color: transparent !important;
+        font-size: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        visibility: hidden !important;
     }}
 
     /* multiselect/selectbox dropdown 은 portal 로 <body> 직속에 마운트.
