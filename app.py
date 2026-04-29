@@ -1219,23 +1219,29 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
     grand_total = float(yearly["total"].sum())
     grand_avg = float(df["revenue"].mean()) if df["revenue"].notna().any() else 0.0
 
-    cols = st.columns(len(yearly) + 1)
-    for col, (_, row) in zip(cols[:-1], yearly.iterrows()):
+    # 연도별 + 전체 합계 — 한 줄에 최대 5개씩 grid 로 표시.
+    items: list[tuple[str, str, str]] = []
+    for _, row in yearly.iterrows():
         avg_val = row["avg"]
-        with col:
-            st.metric(
-                label=f"{int(row['year'])} 합계",
-                value=f"{row['total']:,.0f}",
-                delta=(f"월평균 {avg_val:,.0f}" if pd.notna(avg_val) else "월평균 -"),
-                delta_color="off",
-            )
-    with cols[-1]:
-        st.metric(
-            label="전체 합계",
-            value=f"{grand_total:,.0f}",
-            delta=(f"월평균 {grand_avg:,.0f}" if pd.notna(grand_avg) else "월평균 -"),
-            delta_color="off",
-        )
+        items.append((
+            f"{int(row['year'])} 합계",
+            f"{row['total']:,.0f}",
+            f"월평균 {avg_val:,.0f}" if pd.notna(avg_val) else "월평균 -",
+        ))
+    items.append((
+        "전체 합계",
+        f"{grand_total:,.0f}",
+        f"월평균 {grand_avg:,.0f}" if pd.notna(grand_avg) else "월평균 -",
+    ))
+
+    per_row = 5
+    for start in range(0, len(items), per_row):
+        chunk = items[start:start + per_row]
+        # 5칸 고정 grid → 마지막 행에 항목이 부족해도 카드 너비 일정.
+        cols = st.columns(per_row)
+        for col, (label, value, delta) in zip(cols, chunk):
+            with col:
+                st.metric(label=label, value=value, delta=delta, delta_color="off")
 
 
 def _content_labels(df: pd.DataFrame, ordered_ids: list[str]) -> dict[str, str]:
