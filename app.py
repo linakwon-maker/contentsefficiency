@@ -915,7 +915,7 @@ def _render_content_search_section(
     kw = search.strip()
     ranked = _rank_matches(all_contents, kw)
     available = [c for c in ranked if c["id"] not in current_ids]
-    full = len(current_ids) >= 3
+    full = len(current_ids) >= 5
 
     more_key = f"show_more_search{key_suffix}"
     if more_key not in st.session_state:
@@ -927,7 +927,7 @@ def _render_content_search_section(
         st.caption("검색 결과 없음")
         return
 
-    hint = " · 최대 3개 선택됨" if full else ""
+    hint = " · 최대 5개 선택됨" if full else ""
     st.caption(
         f"검색 결과 {len(available)}개 중 상위 {len(display)}개{hint}"
     )
@@ -1816,7 +1816,7 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
     current_ids: list[str] = list(st.session_state[state_key])
 
     if all_contents:
-        st.caption(f"제목 또는 콘텐츠 ID 검색 (최대 3개 · 총 {len(all_contents):,}개)")
+        st.caption(f"제목 또는 콘텐츠 ID 검색 (최대 5개 · 총 {len(all_contents):,}개)")
         if current_ids:
             st.markdown("**선택된 콘텐츠**")
             for cid in list(current_ids):
@@ -1921,7 +1921,7 @@ def _go_to_query_page() -> None:
 
 
 def render_query_page() -> None:
-    st.caption("왓챠 ‘콘텐츠 매직시트’ 엑셀 업로드 → 콘텐츠 ID 1~3개 + 매출 종류 선택 → 결과 화면")
+    st.caption("왓챠 ‘콘텐츠 매직시트’ 엑셀 업로드 → 콘텐츠 ID 1~5개 + 매출 종류 선택 → 결과 화면")
     new_q = _render_query_form()
     if new_q is not None:
         st.session_state["query"] = new_q
@@ -1987,7 +1987,7 @@ def render_result_page() -> None:
             widget_key = f"rate_{cid}"
             if widget_key not in st.session_state:
                 st.session_state[widget_key] = float(q["default_rate"])
-        rate_cols = st.columns(min(3, len(q["content_ids"])))
+        rate_cols = st.columns(min(5, len(q["content_ids"])))
         for col, cid in zip(rate_cols, q["content_ids"]):
             with col:
                 widget_key = f"rate_{cid}"
