@@ -112,21 +112,27 @@ st.markdown(
             "Apple Color Emoji", "Segoe UI Emoji", sans-serif !important;
     }}
 
-    /* dropdown 옵션 — 어떤 inherit 으로도 안 가려지게 강제 */
+    /* nuclear: body 안 모든 글자 검은색 강제 */
+    body * {{
+        color: #1A1A1A !important;
+    }}
+    /* 단, 흰 글자가 필요한 부분(핑크 버튼·multiselect 태그)은 예외 */
+    .stButton button[kind="primary"], .stButton button[kind="primary"] *,
+    .stDownloadButton button[kind="primary"], .stDownloadButton button[kind="primary"] *,
+    [data-testid="stFormSubmitButton"] button, [data-testid="stFormSubmitButton"] button *,
+    [data-baseweb="tag"], [data-baseweb="tag"] *,
+    span[data-baseweb="tag"] *, span[data-baseweb="tag"] svg {{
+        color: white !important;
+    }}
+    /* dropdown 옵션 추가 안전망 */
     [role="listbox"],
     [role="listbox"] *,
     [role="option"],
-    [role="option"] *,
-    [data-baseweb="popover"] [role="listbox"],
-    [data-baseweb="popover"] [role="listbox"] *,
-    [data-baseweb="menu"] li,
-    [data-baseweb="menu"] li * {{
-        color: {_TEXT} !important;
+    [role="option"] * {{
+        color: #1A1A1A !important;
         opacity: 1 !important;
         visibility: visible !important;
         font-size: 0.92rem !important;
-        font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
-            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
     }}
     [role="option"] {{
         background-color: white !important;
