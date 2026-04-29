@@ -78,17 +78,20 @@ _TEXT_MUTED = "#6B6B6B"
 # Plotly 차트용 폰트 스택 (CSS 와 동일한 fallback 체인)
 _PLOTLY_FONT_FAMILY = (
     '"Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, '
-    '"Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif'
+    '"Pretendard", "Malgun Gothic", "Segoe UI", Roboto, '
+    '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif'
 )
 
 st.markdown(
     f"""
     <style>
-    /* 글로벌 폰트: Apple SD Gothic Neo (macOS/iOS 기본 한글),
-       다른 OS·브라우저는 시스템·Pretendard·Malgun Gothic 으로 fallback */
+    /* 글로벌 폰트: Apple SD Gothic Neo + 이모지 폰트 명시 (이모지가
+       한글 폰트로 fallback 되어 깨지는 문제 회피) */
     html, body, .stApp, [class*="st-"], button, input, select, textarea, label {{
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
-            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
+            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto,
+            "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+            sans-serif !important;
     }}
     /* Streamlit 도움말(?) 아이콘이 사용자 환경에서 한글 폰트로 깨져
        엉뚱한 글자로 보이는 문제 → 아이콘 자체를 표시하지 않음.
@@ -1051,18 +1054,19 @@ def render_yearly_summary(df: pd.DataFrame) -> None:
 
     cols = st.columns(len(yearly) + 1)
     for col, (_, row) in zip(cols[:-1], yearly.iterrows()):
+        avg_val = row["avg"]
         with col:
             st.metric(
                 label=f"{int(row['year'])} 합계",
                 value=f"{row['total']:,.0f}",
-                delta=f"월평균 {row['avg']:,.0f}",
+                delta=(f"월평균 {avg_val:,.0f}" if pd.notna(avg_val) else "월평균 -"),
                 delta_color="off",
             )
     with cols[-1]:
         st.metric(
-            label="🏁 전체 합계",
+            label="전체 합계",
             value=f"{grand_total:,.0f}",
-            delta=f"월평균 {grand_avg:,.0f}",
+            delta=(f"월평균 {grand_avg:,.0f}" if pd.notna(grand_avg) else "월평균 -"),
             delta_color="off",
         )
 
