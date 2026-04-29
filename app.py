@@ -1540,22 +1540,68 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
     )
 
     st.subheader("4. 콘텐츠 선택")
-    content_ids: list[str] = []
     with st.spinner("콘텐츠 목록 불러오는 중..."):
         all_contents = extract_all_contents(file_datas)
+
+    state_key = f"selected_content_ids{key_suffix}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = []
+    current_ids: list[str] = list(st.session_state[state_key])
+
     if all_contents:
-        options = [_format_content_option(c) for c in all_contents]
-        option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
-        selected = st.multiselect(
-            f"콘텐츠 선택 (최대 3개 · 총 {len(all_contents):,}개)",
-            options=options,
-            max_selections=3,
-            placeholder="제목 또는 콘텐츠 ID 입력 후 선택",
-            key=f"content_select{key_suffix}",
+        st.caption(f"제목 또는 콘텐츠 ID 검색 (최대 3개 · 총 {len(all_contents):,}개)")
+        search = st.text_input(
+            "콘텐츠 검색",
+            key=f"content_search{key_suffix}",
+            placeholder="예: 프리미어리그, 3346723",
+            label_visibility="collapsed",
         )
-        content_ids = [option_to_id[s] for s in selected]
+
+        if current_ids:
+            st.markdown("**선택된 콘텐츠**")
+            for cid in list(current_ids):
+                lbl = next(
+                    (_format_content_option(c) for c in all_contents if c["id"] == cid),
+                    cid,
+                )
+                cols = st.columns([6, 1])
+                cols[0].markdown(f"📺 {lbl}")
+                if cols[1].button("제거", key=f"rm_{cid}{key_suffix}"):
+                    st.session_state[state_key] = [x for x in current_ids if x != cid]
+                    st.rerun()
+
+        if search.strip():
+            kw = search.strip().lower()
+            matches = [
+                c for c in all_contents
+                if kw in (c.get("title") or "").lower() or kw in str(c.get("id", ""))
+            ][:30]
+            already = set(current_ids)
+            full = len(current_ids) >= 3
+            if matches:
+                st.caption(f"검색 결과 상위 {len(matches)}개")
+                for c in matches:
+                    cid = c["id"]
+                    if cid in already:
+                        continue
+                    label = _format_content_option(c)
+                    if st.button(
+                        f"➕ {label}",
+                        key=f"add_{cid}{key_suffix}",
+                        use_container_width=True,
+                        disabled=full,
+                    ):
+                        st.session_state[state_key] = current_ids + [cid]
+                        st.rerun()
+            else:
+                st.caption("검색 결과 없음")
+        else:
+            if not current_ids:
+                st.caption("위 검색창에 콘텐츠 제목 또는 ID 를 입력하세요.")
     else:
         st.caption("콘텐츠 목록을 추출하지 못했습니다.")
+
+    content_ids = list(st.session_state[state_key])
 
     if st.button("조회", type="primary", use_container_width=True, key=f"run{key_suffix}"):
         if not content_ids:
@@ -1571,7 +1617,7 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
 
 
 def _render_quick_content_picker() -> dict | None:
-    """결과 페이지 상단용 — 콘텐츠 multiselect + 재조회. 옵션 변경은 처음으로."""
+    """결과 페이지 상단용 — 검색 + 결과 버튼으로 콘텐츠 추가/제거 + 재조회."""
     file_datas = st.session_state["file_datas"]
     if not file_datas:
         st.caption("파일이 없습니다. ‘← 처음으로’ 에서 다시 업로드하세요.")
@@ -1580,29 +1626,66 @@ def _render_quick_content_picker() -> dict | None:
 
     with st.spinner("콘텐츠 목록 불러오는 중..."):
         all_contents = extract_all_contents(file_datas)
-    options = [_format_content_option(c) for c in all_contents]
-    option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
-    id_to_option = {v: k for k, v in option_to_id.items()}
 
-    default_options = [
-        id_to_option[c] for c in q_prev.get("content_ids", []) if c in id_to_option
-    ]
-    selected = st.multiselect(
-        "콘텐츠 (최대 3개)",
-        options=options,
-        default=default_options,
-        max_selections=3,
-        placeholder="제목 또는 콘텐츠 ID 입력",
-        key="quick_content_picker",
+    state_key = "quick_selected_ids"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = list(q_prev.get("content_ids", []))
+    current_ids: list[str] = list(st.session_state[state_key])
+
+    if not all_contents:
+        st.caption("콘텐츠 목록을 추출하지 못했습니다.")
+        return None
+
+    if current_ids:
+        st.markdown("**현재 선택된 콘텐츠**")
+        for cid in list(current_ids):
+            lbl = next(
+                (_format_content_option(c) for c in all_contents if c["id"] == cid),
+                cid,
+            )
+            cols = st.columns([6, 1])
+            cols[0].markdown(f"📺 {lbl}")
+            if cols[1].button("제거", key=f"q_rm_{cid}"):
+                st.session_state[state_key] = [x for x in current_ids if x != cid]
+                st.rerun()
+
+    search = st.text_input(
+        "콘텐츠 검색 (제목 또는 ID)",
+        key="quick_content_search",
+        placeholder="예: 프리미어리그, 3346723",
     )
-    content_ids = [option_to_id[s] for s in selected]
+    if search.strip():
+        kw = search.strip().lower()
+        matches = [
+            c for c in all_contents
+            if kw in (c.get("title") or "").lower() or kw in str(c.get("id", ""))
+        ][:30]
+        already = set(current_ids)
+        full = len(current_ids) >= 3
+        if matches:
+            st.caption(f"검색 결과 상위 {len(matches)}개")
+            for c in matches:
+                cid = c["id"]
+                if cid in already:
+                    continue
+                label = _format_content_option(c)
+                if st.button(
+                    f"➕ {label}",
+                    key=f"q_add_{cid}",
+                    use_container_width=True,
+                    disabled=full,
+                ):
+                    st.session_state[state_key] = current_ids + [cid]
+                    st.rerun()
+        else:
+            st.caption("검색 결과 없음")
 
     if st.button("재조회", type="primary", key="quick_run"):
-        if not content_ids:
+        if not current_ids:
             st.warning("콘텐츠를 1개 이상 선택해주세요.")
             return None
         new_q = dict(q_prev)
-        new_q["content_ids"] = content_ids
+        new_q["content_ids"] = current_ids
         return new_q
     return None
 
