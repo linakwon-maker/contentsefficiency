@@ -94,13 +94,27 @@ st.markdown(
             sans-serif !important;
     }}
     /* Streamlit 도움말(?) 아이콘이 사용자 환경에서 한글 폰트로 깨져
-       엉뚱한 글자로 보이는 문제 → 아이콘 자체를 표시하지 않음.
-       help= 파라미터의 텍스트는 라벨/캡션에 이미 노출하거나 생략. */
+       엉뚱한 글자로 보이는 문제 → 아이콘 자체를 표시하지 않음. */
     [data-testid="stTooltipHoverTarget"],
     [data-testid="stTooltipIcon"],
     label [data-baseweb="tooltip"],
     label svg[viewBox="0 0 16 16"] {{
         display: none !important;
+    }}
+
+    /* 파일 업로더 영역은 글로벌 폰트 강제에서 제외 — Streamlit 이 사용하는
+       Material Icons / Symbols 폰트 매핑이 한글 폰트로 깨지는 문제 차단.
+       파일 항목의 삭제(×) 버튼 등 ligature 아이콘이 정상 표시되도록 함. */
+    [data-testid="stFileUploader"],
+    [data-testid="stFileUploader"] *,
+    [data-testid="stFileUploader"] *::before,
+    [data-testid="stFileUploader"] *::after {{
+        font-family: revert !important;
+    }}
+    /* 단, 우리가 직접 주입한 '파일 선택' 라벨은 한글 폰트 유지 */
+    [data-testid="stFileUploader"] button::after {{
+        font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
+            "Pretendard", "Malgun Gothic", sans-serif !important;
     }}
 
     /* 페이지: 흰톤 베이스 (원복) */
