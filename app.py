@@ -1603,7 +1603,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 y=drops["revenue"],
                 mode="markers",
                 name=f"{label} · 급락(-30%↓)",
-                marker=dict(color="red", size=11, symbol="x", line=dict(width=2)),
+                marker=dict(color="red", size=13, symbol="triangle-down", line=dict(width=1, color="white")),
                 hovertemplate=(
                     "%{x|%Y-%m}<br>매출 %{y:,.0f}<br>"
                     "전월 대비 %{customdata:.0%}<extra></extra>"
@@ -1613,7 +1613,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
             ))
 
     # 차트 위 보조 설명: Plotly title 대신 st.caption 으로 분리 → 버튼과 안 겹침
-    st.caption("빨간 X = 전월 대비 30%↓  ·  드래그로 영역 확대 · 더블클릭으로 리셋")
+    st.caption("빨간 ▼ = 전월 대비 30%↓  ·  드래그로 영역 확대 · 더블클릭으로 리셋")
 
     fig.update_layout(
         title={"text": "", "x": 0},
