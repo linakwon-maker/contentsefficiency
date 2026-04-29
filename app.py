@@ -102,29 +102,11 @@ st.markdown(
         display: none !important;
     }}
 
-    /* multiselect/selectbox dropdown 은 portal 로 body 에 마운트되어
-       글로벌 [class*="st-"] 셀렉터에 안 잡힘 → 폰트·글자색 명시.
-       body 직속 portal + baseweb popover/menu + listbox/option 모두 포괄. */
-    body > div[data-baseweb],
-    body > div[data-baseweb] *,
-    body > div[id^="streamlit"],
-    body > div[id^="streamlit"] *,
-    [data-baseweb="popover"],
-    [data-baseweb="popover"] *,
-    [data-baseweb="menu"],
-    [data-baseweb="menu"] *,
-    [data-baseweb="select"] *,
-    ul[role="listbox"],
-    ul[role="listbox"] *,
-    li[role="option"],
-    li[role="option"] *,
-    div[role="listbox"],
-    div[role="listbox"] *,
-    div[role="option"],
-    div[role="option"] *,
-    [aria-activedescendant] ~ * *,
-    [data-id="virtual-list"],
-    [data-id="virtual-list"] * {{
+    /* multiselect/selectbox dropdown 은 portal 로 <body> 직속에 마운트.
+       stApp/stHeader 외 모든 body 직속 div 와 그 자손에 색·폰트 강제.
+       어떤 baseweb 빌드든 일관되게 잡힘. */
+    body > div:not([data-testid="stApp"]):not([data-testid="stHeader"]):not([data-testid="stStatusWidget"]),
+    body > div:not([data-testid="stApp"]):not([data-testid="stHeader"]):not([data-testid="stStatusWidget"]) * {{
         color: {_TEXT} !important;
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
             "Pretendard", "Malgun Gothic", "Segoe UI", Roboto,
