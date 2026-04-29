@@ -90,16 +90,14 @@ st.markdown(
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
             "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
     }}
-    /* 단, Streamlit 의 Material Icons / Symbols 아이콘 폰트는 예외 —
-       ligature 로 렌더되므로 한글 폰트가 강제되면 글자가 깨져 보임 */
-    .material-icons, .material-icons-outlined,
-    .material-symbols-outlined, .material-symbols-rounded,
-    i.material-icons, i.material-icons-outlined,
-    i.material-symbols-outlined, i.material-symbols-rounded,
-    span[class*="material-icons"], span[class*="material-symbols"],
-    [data-testid="stIconMaterial"], [data-testid="stIconMaterial"] * {{
-        font-family: "Material Symbols Outlined", "Material Symbols Rounded",
-            "Material Icons", "Material Icons Outlined" !important;
+    /* Streamlit 도움말(?) 아이콘이 사용자 환경에서 한글 폰트로 깨져
+       엉뚱한 글자로 보이는 문제 → 아이콘 자체를 표시하지 않음.
+       help= 파라미터의 텍스트는 라벨/캡션에 이미 노출하거나 생략. */
+    [data-testid="stTooltipHoverTarget"],
+    [data-testid="stTooltipIcon"],
+    label [data-baseweb="tooltip"],
+    label svg[viewBox="0 0 16 16"] {{
+        display: none !important;
     }}
 
     /* 페이지: 흰톤 베이스 (원복) */
