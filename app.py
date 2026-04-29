@@ -823,8 +823,14 @@ def load_sales_from_uploads(
                 var_name="month",
                 value_name="revenue",
             )
-            # _to_number 를 컬럼 전체에 한 번 (apply 는 list-comp 보다 빠름)
-            melted["revenue"] = [_to_number(v) for v in melted["revenue"]]
+            # 벡터화 _to_number: string 변환 → 숫자 외 문자 제거 → to_numeric
+            rev_str = (
+                melted["revenue"].astype("string")
+                .str.replace(r"[^0-9.\-]", "", regex=True)
+            )
+            rev_str = rev_str.where(rev_str.str.len() > 0)
+            rev_str = rev_str.where(~rev_str.isin({"-", "."}))
+            melted["revenue"] = pd.to_numeric(rev_str, errors="coerce")
             melted["content_title"] = melted["__title"]
             melted["year"] = year
             melted["is_estimate"] = False
@@ -892,9 +898,6 @@ def load_sales_from_uploads(
 # 렌더링
 # --------------------------------------------------------------------------
 
-_ESTIMATE_CELL_STYLE = "background-color: #FFF1F4; color: #B0033A;"
-
-
 def render_pivot(df: pd.DataFrame) -> None:
     if df.empty:
         st.info("매출 데이터가 없습니다.")
@@ -902,45 +905,20 @@ def render_pivot(df: pd.DataFrame) -> None:
     pivot = df.pivot_table(
         index="year", columns="month", values="revenue", aggfunc="sum",
     ).reindex(columns=range(1, 13))
-
-    has_est = "is_estimate" in df.columns and df["is_estimate"].any()
-    if has_est:
-        est_pivot = (
-            df.pivot_table(
-                index="year", columns="month",
-                values="is_estimate", aggfunc="any",
-            )
-            .reindex(index=pivot.index, columns=range(1, 13))
-            .fillna(False)
-        )
-    else:
-        est_pivot = None
-
     pivot.columns = [f"{m}월" for m in pivot.columns]
     pivot["연간 합계"] = pivot.sum(axis=1, skipna=True)
     pivot["연간 평균"] = pivot.iloc[:, :12].mean(axis=1, skipna=True)
 
+    # 마지막 행에 총합계 (월별 합 / 연간 합계 합 / 전체 월 평균)
     total_row = pivot.iloc[:, :12].sum(axis=0, skipna=True)
     total_row["연간 합계"] = pivot["연간 합계"].sum(skipna=True)
     total_row["연간 평균"] = pivot.iloc[:, :12].stack().mean()
     pivot.loc["총합"] = total_row
 
-    styler = pivot.style.format("{:,.0f}", na_rep="-")
-    if est_pivot is not None:
-        full_mask = pd.DataFrame(False, index=pivot.index, columns=pivot.columns)
-        est_pivot.columns = [f"{m}월" for m in est_pivot.columns]
-        for ix in est_pivot.index:
-            for col in est_pivot.columns:
-                if bool(est_pivot.at[ix, col]):
-                    full_mask.at[ix, col] = True
-        styler = styler.apply(
-            lambda _: full_mask.map(
-                lambda v: _ESTIMATE_CELL_STYLE if v else ""
-            ),
-            axis=None,
-        )
-
-    st.dataframe(styler, use_container_width=True)
+    st.dataframe(
+        pivot.style.format("{:,.0f}", na_rep="-"),
+        use_container_width=True,
+    )
 
 
 def render_yearly_summary(df: pd.DataFrame) -> None:
@@ -1004,24 +982,15 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
     """
     labels = _content_labels(df, ordered_ids)
     rows: list[dict] = []
-    has_est_col = "is_estimate" in df.columns
 
     for cid in ordered_ids:
         sub = df[df["content_id"] == cid]
-
-        # 같은 (year, month) 에 여러 매출 종류 행이 있으면 합산.
-        # is_estimate 는 그 달에 추정 row 가 하나라도 있으면 True.
-        agg_kwargs = {"revenue": ("revenue", lambda s: s.sum(min_count=1))}
-        if has_est_col:
-            agg_kwargs["is_estimate"] = ("is_estimate", "any")
+        # 같은 (year, month) 에 여러 매출 종류 행이 있으면 합산 → 그 달의 실제 매출
         sub = (
-            sub.groupby(["year", "month"], as_index=False)
-            .agg(**agg_kwargs)
+            sub.groupby(["year", "month"], as_index=False)["revenue"].sum(min_count=1)
             .sort_values(["year", "month"])
             .reset_index(drop=True)
         )
-        if not has_est_col:
-            sub["is_estimate"] = False
 
         nonzero = sub[sub["revenue"].notna() & (sub["revenue"] > 0)]
         if nonzero.empty:
@@ -1030,7 +999,6 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
                 "첫 매출월": "-",
                 "첫 12개월 평균": float("nan"),
                 "계산 기간(개월)": 0,
-                "추정치 포함": "-",
                 "FLAT 1년 예상": float("nan"),
                 "FLAT 3년 예상": float("nan"),
                 "FLAT 5년 예상": float("nan"),
@@ -1053,7 +1021,6 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
 
         avg = window["revenue"].mean()
         valid_months = int(window["revenue"].notna().sum())
-        est_months = int(window["is_estimate"].fillna(False).sum())
 
         flat_1y = avg * 12 * FLAT_DEPRECIATION if pd.notna(avg) else float("nan")
         flat_3y = flat_1y * 3 if pd.notna(flat_1y) else float("nan")
@@ -1064,13 +1031,38 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
             "첫 매출월": f"{first_y}-{first_m:02d}",
             "첫 12개월 평균": avg,
             "계산 기간(개월)": valid_months,
-            "추정치 포함": f"{est_months}개월" if est_months > 0 else "-",
             "FLAT 1년 예상": flat_1y,
             "FLAT 3년 예상": flat_3y,
             "FLAT 5년 예상": flat_5y,
         })
 
     return pd.DataFrame(rows)
+
+
+@st.cache_data(show_spinner=False)
+def _load_sales_cached(
+    file_datas_tuple: tuple,
+    content_ids_tuple: tuple,
+    selected_categories_tuple: tuple,
+    estimate_missing: bool,
+    estimate_bill_type: str,
+    estimate_rates_tuple: tuple,
+    default_rate: float,
+):
+    """rerun 마다 같은 입력이면 즉시 캐시 히트.
+
+    rate 만 바뀌어도 무거운 시트 파싱은 내부 캐시 (_read_*_sheet) 가 처리,
+    이 wrapper 는 매칭·melt·concat 까지 한 번에 캐시.
+    """
+    return load_sales_from_uploads(
+        list(file_datas_tuple),
+        list(content_ids_tuple),
+        selected_categories=list(selected_categories_tuple) or None,
+        estimate_missing=estimate_missing,
+        estimate_bill_type=estimate_bill_type,
+        estimate_rates=dict(estimate_rates_tuple),
+        default_rate=default_rate,
+    )
 
 
 def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
@@ -1138,14 +1130,19 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
     return buffer.getvalue()
 
 
+@st.cache_data(show_spinner=False)
+def _build_excel_export_cached(df: pd.DataFrame, ordered_ids: tuple) -> bytes:
+    """다운로드 버튼은 매 rerun 마다 data 인자를 재평가하므로 캐시."""
+    return build_excel_export(df, list(ordered_ids))
+
+
 def render_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> None:
     if df.empty:
         return
     result = compute_flat_estimates(df, ordered_ids)
     st.caption(
         f"**계산 방식**: 첫 매출월부터 연속 12개월 평균 매출 × 12 × {FLAT_DEPRECIATION}(감가) "
-        f"= FLAT 1년 예상. 3년·5년은 각각 1년 예상 × 3, × 5.  "
-        "**추정치 포함** 열은 12개월 윈도우 안에 추정 매출이 들어간 월 수."
+        f"= FLAT 1년 예상. 3년·5년은 각각 1년 예상 × 3, × 5."
     )
 
     num_fmt = {
@@ -1154,17 +1151,11 @@ def render_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> None:
         "FLAT 3년 예상": "{:,.0f}",
         "FLAT 5년 예상": "{:,.0f}",
     }
-
-    def _shade_est_row(row: pd.Series) -> list[str]:
-        flag = isinstance(row.get("추정치 포함"), str) and row["추정치 포함"] != "-"
-        style = _ESTIMATE_CELL_STYLE if flag else ""
-        return [style if col == "추정치 포함" else "" for col in row.index]
-
-    styler = (
-        result.style.format(num_fmt, na_rep="-")
-        .apply(_shade_est_row, axis=1)
+    st.dataframe(
+        result.style.format(num_fmt, na_rep="-"),
+        use_container_width=True,
+        hide_index=True,
     )
-    st.dataframe(styler, use_container_width=True, hide_index=True)
 
     # 12개월 데이터 미달 콘텐츠 경고
     short = result[(result["계산 기간(개월)"] > 0) & (result["계산 기간(개월)"] < 12)]
@@ -1205,44 +1196,21 @@ def render_monthly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
         df2.groupby(["period", "content_id"])["revenue"].sum().unstack("content_id")
         .reindex(columns=ordered_ids).sort_index()
     )
-
-    has_est = "is_estimate" in df2.columns and df2["is_estimate"].any()
-    if has_est:
-        est_pivot = (
-            df2.groupby(["period", "content_id"])["is_estimate"].any()
-            .unstack("content_id")
-            .reindex(index=pivot.index, columns=ordered_ids)
-            .fillna(False)
-        )
-    else:
-        est_pivot = None
-
     pivot.columns = [labels[c] for c in pivot.columns]
     pivot.index.name = "연-월"
 
-    styler = pivot.style.format("{:,.0f}", na_rep="-")
-    if est_pivot is not None:
-        est_pivot.columns = [labels[c] for c in est_pivot.columns]
-        styler = styler.apply(
-            lambda _: est_pivot.map(
-                lambda v: _ESTIMATE_CELL_STYLE if v else ""
-            ),
-            axis=None,
-        )
-
-    st.dataframe(styler, use_container_width=True, height=400)
+    st.dataframe(
+        pivot.style.format("{:,.0f}", na_rep="-"),
+        use_container_width=True,
+        height=400,
+    )
 
 
 def render_comparison_chart(df: pd.DataFrame) -> None:
     if df.empty:
         return
-    df2 = df.copy()
-    if "is_estimate" not in df2.columns:
-        df2["is_estimate"] = False
-
-    plot_df = df2.groupby(["content_id", "year", "month"], as_index=False).agg(
-        revenue=("revenue", "sum"),
-        is_estimate=("is_estimate", "any"),
+    plot_df = (
+        df.groupby(["content_id", "year", "month"], as_index=False)["revenue"].sum()
     )
     plot_df["date"] = pd.to_datetime(
         plot_df["year"].astype(str) + "-" + plot_df["month"].astype(str).str.zfill(2) + "-01"
@@ -1257,51 +1225,15 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
     for idx, (cid, group) in enumerate(plot_df.groupby("content_id")):
         label = chart_labels.get(cid, cid)
         color = palette[idx % len(palette)]
-        group = group.reset_index(drop=True)
-
-        if not group["is_estimate"].any():
-            fig.add_trace(go.Scatter(
-                x=group["date"], y=group["revenue"],
-                mode="lines+markers",
-                name=label,
-                line=dict(color=color, width=2),
-                marker=dict(size=5),
-                hovertemplate="%{x|%Y-%m} · %{y:,.0f}<extra></extra>",
-                legendgroup=cid,
-            ))
-        else:
-            # 실측 / 추정 두 trace 로 분리: solid 와 dash 가 전환 지점에서
-            # 한 점을 공유하도록 NaN 사이를 한 칸씩 보강 → 끊김 없는 전환
-            solid_y = group["revenue"].where(~group["is_estimate"]).copy()
-            dash_y = group["revenue"].where(group["is_estimate"]).copy()
-            for i in range(1, len(group)):
-                cur, prev = bool(group["is_estimate"].iat[i]), bool(group["is_estimate"].iat[i - 1])
-                if cur and not prev:
-                    dash_y.iat[i - 1] = group["revenue"].iat[i - 1]
-                if (not cur) and prev:
-                    solid_y.iat[i - 1] = group["revenue"].iat[i - 1]
-
-            fig.add_trace(go.Scatter(
-                x=group["date"], y=solid_y,
-                mode="lines+markers",
-                name=label,
-                line=dict(color=color, width=2),
-                marker=dict(size=5),
-                connectgaps=False,
-                hovertemplate="%{x|%Y-%m} · %{y:,.0f}<extra></extra>",
-                legendgroup=cid,
-            ))
-            fig.add_trace(go.Scatter(
-                x=group["date"], y=dash_y,
-                mode="lines+markers",
-                name=f"{label} · 추정",
-                line=dict(color=color, width=2, dash="dot"),
-                marker=dict(size=7, symbol="circle-open", line=dict(color=color, width=2)),
-                connectgaps=False,
-                hovertemplate="%{x|%Y-%m} · %{y:,.0f} (추정)<extra></extra>",
-                legendgroup=cid,
-            ))
-
+        fig.add_trace(go.Scatter(
+            x=group["date"],
+            y=group["revenue"],
+            mode="lines+markers",
+            name=label,
+            line=dict(color=color, width=2),
+            marker=dict(size=5),
+            hovertemplate="%{x|%Y-%m} · %{y:,.0f}<extra></extra>",
+        ))
         group = group.assign(prev=group["revenue"].shift(1))
         group["pct_change"] = (group["revenue"] - group["prev"]) / group["prev"]
         drops = group[group["pct_change"] <= -0.30].dropna(subset=["revenue"])
@@ -1318,7 +1250,6 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
                 ),
                 customdata=drops["pct_change"],
                 showlegend=True,
-                legendgroup=cid,
             ))
 
     # 차트 위 보조 설명: Plotly title 대신 st.caption 으로 분리 → 버튼과 안 겹침
@@ -1535,14 +1466,14 @@ def main() -> None:
         st.divider()
 
     with st.spinner("엑셀 파일 분석 중..."):
-        df, file_status, errors = load_sales_from_uploads(
-            st.session_state["file_datas"],
-            q["content_ids"],
-            selected_categories=q["selected_categories"] or None,
-            estimate_missing=True,
-            estimate_bill_type=q["estimate_bill_type"],
-            estimate_rates=rates,
-            default_rate=q["default_rate"],
+        df, file_status, errors = _load_sales_cached(
+            tuple(st.session_state["file_datas"]),
+            tuple(q["content_ids"]),
+            tuple(q["selected_categories"] or ()),
+            True,
+            q["estimate_bill_type"],
+            tuple(sorted(rates.items())),
+            q["default_rate"],
         )
 
     with st.expander(f"📁 파일 처리 현황 ({len(file_status)}개)", expanded=False):
@@ -1580,7 +1511,7 @@ def main() -> None:
         )
     with download_col:
         try:
-            excel_bytes = build_excel_export(df, found_ids)
+            excel_bytes = _build_excel_export_cached(df, tuple(found_ids))
             st.download_button(
                 "📥 엑셀 다운로드",
                 data=excel_bytes,
