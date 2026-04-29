@@ -873,27 +873,11 @@ def _render_content_search_section(
     all_contents: list[dict],
     current_ids: list[str],
 ) -> None:
-    """검색 input + 자동완성 결과 표시 + Enter 시 첫 결과 자동 추가."""
-    def _on_submit() -> None:
-        kw = (st.session_state.get(search_key) or "").strip()
-        if not kw:
-            return
-        ids_now = list(st.session_state.get(state_key, []))
-        if len(ids_now) >= 3:
-            return
-        matches = [
-            c for c in _rank_matches(all_contents, kw)
-            if c["id"] not in ids_now
-        ]
-        if matches:
-            st.session_state[state_key] = ids_now + [matches[0]["id"]]
-            st.session_state[search_key] = ""
-
+    """검색 input + 키워드 매칭 자동 추천 결과 표시."""
     search = st.text_input(
-        "콘텐츠 검색 (Enter 로 첫 결과 자동 추가)",
+        "콘텐츠 검색",
         placeholder="예: 프리미어리그, 3346723",
         key=search_key,
-        on_change=_on_submit,
     )
     if not search or not search.strip():
         if not current_ids:
@@ -915,7 +899,7 @@ def _render_content_search_section(
         st.caption("검색 결과 없음")
         return
 
-    hint = " · Enter 로 첫 결과 자동 추가" if not full else " · 최대 3개 선택됨"
+    hint = " · 최대 3개 선택됨" if full else ""
     st.caption(
         f"검색 결과 {len(available)}개 중 상위 {len(display)}개{hint}"
     )
