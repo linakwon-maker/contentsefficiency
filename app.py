@@ -85,9 +85,8 @@ _PLOTLY_FONT_FAMILY = (
 st.markdown(
     f"""
     <style>
-    /* 글로벌 폰트: Apple SD Gothic Neo + 이모지 폰트 명시 (이모지가
-       한글 폰트로 fallback 되어 깨지는 문제 회피) */
-    html, body, .stApp, [class*="st-"], button, input, select, textarea, label {{
+    /* 글로벌 폰트: stApp 영역만 강제 (portal popover 는 baseweb 기본 폰트 유지) */
+    html, body, .stApp, .stApp *, button, input, select, textarea, label {{
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
             "Pretendard", "Malgun Gothic", "Segoe UI", Roboto,
             "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
@@ -122,34 +121,25 @@ st.markdown(
             "Apple Color Emoji", "Segoe UI Emoji", sans-serif !important;
     }}
 
-    /* nuclear: body 안 모든 글자 검은색 강제 */
-    body * {{
-        color: #1A1A1A !important;
-    }}
-    /* 단, 흰 글자가 필요한 부분(핑크 버튼·multiselect 태그)은 예외 */
-    .stButton button[kind="primary"], .stButton button[kind="primary"] *,
-    .stDownloadButton button[kind="primary"], .stDownloadButton button[kind="primary"] *,
-    [data-testid="stFormSubmitButton"] button, [data-testid="stFormSubmitButton"] button *,
-    [data-baseweb="tag"], [data-baseweb="tag"] *,
-    span[data-baseweb="tag"] *, span[data-baseweb="tag"] svg {{
-        color: white !important;
-    }}
-    /* dropdown 옵션 추가 안전망 */
-    [role="listbox"],
-    [role="listbox"] *,
-    [role="option"],
-    [role="option"] * {{
-        color: #1A1A1A !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-        font-size: 0.92rem !important;
+    /* dropdown 옵션 — 색·배경만 명시, 다른 layout 속성은 baseweb 기본 유지 */
+    [role="listbox"] {{
+        max-height: 280px !important;
+        background-color: white !important;
     }}
     [role="option"] {{
+        color: #1A1A1A !important;
         background-color: white !important;
+    }}
+    [role="option"] * {{
+        color: #1A1A1A !important;
     }}
     [role="option"][aria-selected="true"],
     [role="option"]:hover {{
         background-color: {_PINK_TINT} !important;
+    }}
+    [role="option"][aria-selected="true"] *,
+    [role="option"]:hover * {{
+        color: #1A1A1A !important;
     }}
 
     /* 페이지: 흰톤 베이스 (원복) */
