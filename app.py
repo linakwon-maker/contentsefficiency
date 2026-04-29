@@ -103,14 +103,37 @@ st.markdown(
     }}
 
     /* multiselect/selectbox dropdown 은 portal 로 <body> 직속에 마운트.
-       stApp/stHeader 외 모든 body 직속 div 와 그 자손에 색·폰트 강제.
-       어떤 baseweb 빌드든 일관되게 잡힘. */
+       stApp/stHeader 외 모든 body 직속 div 와 그 자손에 색·폰트 강제. */
     body > div:not([data-testid="stApp"]):not([data-testid="stHeader"]):not([data-testid="stStatusWidget"]),
     body > div:not([data-testid="stApp"]):not([data-testid="stHeader"]):not([data-testid="stStatusWidget"]) * {{
         color: {_TEXT} !important;
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
             "Pretendard", "Malgun Gothic", "Segoe UI", Roboto,
             "Apple Color Emoji", "Segoe UI Emoji", sans-serif !important;
+    }}
+
+    /* dropdown 옵션 — 어떤 inherit 으로도 안 가려지게 강제 */
+    [role="listbox"],
+    [role="listbox"] *,
+    [role="option"],
+    [role="option"] *,
+    [data-baseweb="popover"] [role="listbox"],
+    [data-baseweb="popover"] [role="listbox"] *,
+    [data-baseweb="menu"] li,
+    [data-baseweb="menu"] li * {{
+        color: {_TEXT} !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        font-size: 0.92rem !important;
+        font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
+            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto, sans-serif !important;
+    }}
+    [role="option"] {{
+        background-color: white !important;
+    }}
+    [role="option"][aria-selected="true"],
+    [role="option"]:hover {{
+        background-color: {_PINK_TINT} !important;
     }}
 
     /* 페이지: 흰톤 베이스 (원복) */
