@@ -1098,7 +1098,7 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
             writer, sheet_name="FLAT 예상", index=False,
         )
 
-        # 4) 콘텐츠별 피벗 — 시트 하나당 한 콘텐츠
+        # 4) 콘텐츠별 피벗 — 시트 하나당 한 콘텐츠 (연간 합계·평균·총합 포함)
         used_names: set[str] = set()
         for cid in ordered_ids:
             sub = df[df["content_id"] == cid]
@@ -1111,6 +1111,13 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
                 .reindex(columns=range(1, 13))
             )
             piv.columns = [f"{m}월" for m in piv.columns]
+            piv["연간 합계"] = piv.iloc[:, :12].sum(axis=1, skipna=True)
+            piv["연간 평균"] = piv.iloc[:, :12].mean(axis=1, skipna=True)
+
+            total_row = piv.iloc[:, :12].sum(axis=0, skipna=True)
+            total_row["연간 합계"] = piv["연간 합계"].sum(skipna=True)
+            total_row["연간 평균"] = piv.iloc[:, :12].stack().mean()
+            piv.loc["총합"] = total_row
             piv.index.name = "연도"
 
             # 시트명: 31자 제한 + 중복 회피 + 엑셀이 거부하는 문자 치환
