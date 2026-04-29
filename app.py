@@ -1179,7 +1179,61 @@ def compute_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> pd.DataF
     return pd.DataFrame(rows)
 
 
+def _file_datas_signature(file_datas: list[tuple[str, bytes]]) -> tuple:
+    """file_datas 의 가벼운 캐시 키 — (name, len, head_hash) 만 사용.
+
+    매 rerun 마다 (str, bytes) tuple 의 sha256 50MB 해싱하던 비용 제거.
+    내용 변경 감지는 head 8KB hash 로 충분 (실수로 같은 파일 두 번 업로드는 OK).
+    """
+    import hashlib
+    sig = []
+    for name, data in file_datas:
+        h = hashlib.sha1(data[:8192]).hexdigest()
+        sig.append((name, len(data), h))
+    return tuple(sig)
+
+
+def _load_sales(
+    signature: tuple,
+    content_ids_tuple: tuple,
+    selected_categories_tuple: tuple,
+    estimate_missing: bool,
+    estimate_bill_type: str,
+    estimate_rates_tuple: tuple,
+    default_rate: float,
+    _file_datas: list,
+):
+    """공유 본체. signature 기반 cache_data 래퍼가 이 함수를 호출."""
+    return load_sales_from_uploads(
+        _file_datas,
+        list(content_ids_tuple),
+        selected_categories=list(selected_categories_tuple) or None,
+        estimate_missing=estimate_missing,
+        estimate_bill_type=estimate_bill_type,
+        estimate_rates=dict(estimate_rates_tuple),
+        default_rate=default_rate,
+    )
+
+
 @st.cache_data(show_spinner=False)
+def _load_sales_cached_by_sig(
+    signature: tuple,
+    content_ids_tuple: tuple,
+    selected_categories_tuple: tuple,
+    estimate_missing: bool,
+    estimate_bill_type: str,
+    estimate_rates_tuple: tuple,
+    default_rate: float,
+    _file_datas,
+):
+    """signature 만 캐시 키로 사용 (file_datas 자체는 hash 안 됨, _ 접두사로 회피)."""
+    return _load_sales(
+        signature, content_ids_tuple, selected_categories_tuple,
+        estimate_missing, estimate_bill_type, estimate_rates_tuple,
+        default_rate, _file_datas,
+    )
+
+
 def _load_sales_cached(
     file_datas_tuple: tuple,
     content_ids_tuple: tuple,
@@ -1189,19 +1243,13 @@ def _load_sales_cached(
     estimate_rates_tuple: tuple,
     default_rate: float,
 ):
-    """rerun 마다 같은 입력이면 즉시 캐시 히트.
-
-    rate 만 바뀌어도 무거운 시트 파싱은 내부 캐시 (_read_*_sheet) 가 처리,
-    이 wrapper 는 매칭·melt·concat 까지 한 번에 캐시.
-    """
-    return load_sales_from_uploads(
-        list(file_datas_tuple),
-        list(content_ids_tuple),
-        selected_categories=list(selected_categories_tuple) or None,
-        estimate_missing=estimate_missing,
-        estimate_bill_type=estimate_bill_type,
-        estimate_rates=dict(estimate_rates_tuple),
-        default_rate=default_rate,
+    """기존 시그니처 호환 wrapper — 내부적으로 signature 기반 캐시 사용."""
+    file_datas = list(file_datas_tuple)
+    sig = _file_datas_signature(file_datas)
+    return _load_sales_cached_by_sig(
+        sig, content_ids_tuple, selected_categories_tuple,
+        estimate_missing, estimate_bill_type, estimate_rates_tuple,
+        default_rate, file_datas,
     )
 
 
@@ -1482,7 +1530,14 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
         key=f"uploader{key_suffix}",
     )
     if files:
-        st.session_state["file_datas"] = [(f.name, f.getvalue()) for f in files]
+        # 매 rerun 의 getvalue() 호출 = bytes 50MB × N 복사. 동일 업로드 식별자
+        # (file_id 우선, 없으면 name+size) 시그니처 비교해 변경 시에만 갱신.
+        new_sig = tuple(
+            (getattr(f, "file_id", None) or f.name, f.size) for f in files
+        )
+        if st.session_state.get("uploader_sig") != new_sig:
+            st.session_state["file_datas"] = [(f.name, f.getvalue()) for f in files]
+            st.session_state["uploader_sig"] = new_sig
 
     file_datas = st.session_state["file_datas"]
     if file_datas:
@@ -1501,16 +1556,21 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
         return None
 
     st.subheader("2. 매출 종류 필터")
+    st.caption("포함할 매출 종류를 체크 (미선택 = 전체로 간주)")
     selected_categories: list[str] = []
     with st.spinner("매출 종류 추출 중..."):
         available_cats = extract_sales_categories(file_datas)
     if available_cats:
-        selected_categories = st.multiselect(
-            "포함할 매출 종류 (미선택 = 전체)",
-            options=available_cats,
-            default=available_cats,
-            key=f"cats{key_suffix}",
-        )
+        # multiselect 의 dropdown popover 가 환경별로 깨지는 문제 회피 →
+        # 체크박스 grid 로 교체. 옵션은 보통 5~15개라 grid 표시 적합.
+        cat_cols = st.columns(min(5, max(1, len(available_cats))))
+        for i, cat in enumerate(available_cats):
+            ck_key = f"cat_{cat}{key_suffix}"
+            if ck_key not in st.session_state:
+                st.session_state[ck_key] = True  # 기본 전체 선택
+            with cat_cols[i % len(cat_cols)]:
+                if st.checkbox(cat, key=ck_key):
+                    selected_categories.append(cat)
     else:
         st.caption("매출 종류를 찾지 못했습니다.")
 
@@ -1524,10 +1584,12 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
         bill_types = extract_sales_log_types(file_datas)
     if bill_types:
         default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
-        estimate_bill_type = st.selectbox(
+        # selectbox 의 dropdown 도 같은 위험 → radio 로 교체 (popover 사용 X)
+        estimate_bill_type = st.radio(
             "추정 매출 종류",
             options=bill_types,
             index=default_idx,
+            horizontal=True,
             key=f"bill_type{key_suffix}",
         )
     else:
@@ -1544,8 +1606,11 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
         all_contents = extract_all_contents(file_datas)
 
     state_key = f"selected_content_ids{key_suffix}"
+    # 처음 진입이거나 이전 query 결과와 어긋나면 query 의 content_ids 로 동기화.
+    # quick picker 에서 변경된 결과가 query 페이지로 돌아왔을 때 일관되게 보이도록.
+    last_q_ids = st.session_state.get("query", {}).get("content_ids")
     if state_key not in st.session_state:
-        st.session_state[state_key] = []
+        st.session_state[state_key] = list(last_q_ids) if last_q_ids else []
     current_ids: list[str] = list(st.session_state[state_key])
 
     if all_contents:
@@ -1691,9 +1756,16 @@ def _render_quick_content_picker() -> dict | None:
 
 
 def _go_to_query_page() -> None:
-    """결과 페이지에서 조회 페이지로 돌아갈 때 호출. 콘텐츠별 요율 widget state 초기화."""
+    """결과 페이지 → 조회 페이지. 결과 전용 widget state 와 rate widget 초기화.
+    file_datas / uploader_sig 등 업로드 자체는 보존."""
     for k in list(st.session_state.keys()):
-        if isinstance(k, str) and k.startswith("rate_"):
+        if not isinstance(k, str):
+            continue
+        if (
+            k.startswith("rate_")
+            or k.startswith("quick_")
+            or k == "quick_picker_open"
+        ):
             del st.session_state[k]
     st.session_state["step"] = "query"
 
@@ -1714,14 +1786,27 @@ def render_result_page() -> None:
             _go_to_query_page()
             st.rerun()
 
-    # 상단 빠른 콘텐츠 변경
-    with st.expander("🔍 콘텐츠 조회 / 추가", expanded=False):
+    # 상단 빠른 콘텐츠 변경 — expander 대신 토글 버튼으로 진짜 lazy 처리.
+    # expander 는 닫혀 있어도 안의 코드가 매 rerun 평가됨 → 콘텐츠 검색·버튼 그리기
+    # 비용 누적. 토글 button + session_state 로 열렸을 때만 평가.
+    if "quick_picker_open" not in st.session_state:
+        st.session_state["quick_picker_open"] = False
+    toggle_label = (
+        "🔼 콘텐츠 조회 / 추가 닫기"
+        if st.session_state["quick_picker_open"]
+        else "🔍 콘텐츠 조회 / 추가"
+    )
+    if st.button(toggle_label, key="toggle_quick_picker", use_container_width=True):
+        st.session_state["quick_picker_open"] = not st.session_state["quick_picker_open"]
+        st.rerun()
+    if st.session_state["quick_picker_open"]:
         new_q = _render_quick_content_picker()
         if new_q is not None:
             st.session_state["query"] = new_q
             for k in list(st.session_state.keys()):
                 if isinstance(k, str) and k.startswith("rate_"):
                     del st.session_state[k]
+            st.session_state["quick_picker_open"] = False
             st.rerun()
 
     q = st.session_state.get("query")
@@ -1729,11 +1814,13 @@ def render_result_page() -> None:
         st.info("‘← 처음으로’ 에서 다시 조회해주세요.")
         return
 
-    # 콘텐츠 라벨 맵 (요율 에디터 표시용)
+    # 콘텐츠 라벨 맵 (요율 에디터 표시용) — extract_all_contents 는 cache hit
     label_map: dict[str, str] = {}
     if st.session_state["file_datas"]:
         for c in extract_all_contents(st.session_state["file_datas"]):
-            label_map[c["id"]] = f"{c['title']} ({c['id']})" if c["title"] else c["id"]
+            label_map[c["id"]] = (
+                f"{c['title']} ({c['id']})" if c["title"] else c["id"]
+            )
 
     # 콘텐츠별 요율 에디터
     rates: dict[str, float] = {}
@@ -1744,15 +1831,20 @@ def render_result_page() -> None:
             "정산금이 미세팅된 콘텐츠/연도에만 적용되며, 실제 정산금이 있는 부분은 시트의 값을 그대로 사용합니다. "
             "값을 바꾸면 아래 결과가 자동으로 다시 계산됩니다."
         )
+        # ★7: rate widget 의 초기값을 미리 session_state 에 set → 첫 렌더에서도
+        # widget 값과 cache 호출 인자가 일치 (캐시 미스 1회 회피).
+        for cid in q["content_ids"]:
+            widget_key = f"rate_{cid}"
+            if widget_key not in st.session_state:
+                st.session_state[widget_key] = float(q["default_rate"])
         rate_cols = st.columns(min(3, len(q["content_ids"])))
         for col, cid in zip(rate_cols, q["content_ids"]):
             with col:
                 widget_key = f"rate_{cid}"
-                initial = st.session_state.get(widget_key, q["default_rate"])
                 rates[cid] = st.number_input(
                     f"📺 {label_map.get(cid, cid)}",
                     min_value=0.0, max_value=10.0,
-                    value=float(initial), step=0.1, format="%.2f",
+                    step=0.1, format="%.2f",
                     key=widget_key,
                 )
         st.divider()
