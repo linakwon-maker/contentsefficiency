@@ -299,7 +299,9 @@ st.markdown(
         display: none !important;
     }}
 
-    /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
+    /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자.
+       container-type: inline-size 로 자식의 cqw 단위가 카드 width 를 기준으로
+       동작 → value 폰트가 카드 폭에 맞춰 자동 축소되어 큰 숫자도 한 줄로 보임. */
     [data-testid="stMetric"] {{
         background-color: white;
         border: 1.5px solid {_BORDER_SOFT};
@@ -307,6 +309,7 @@ st.markdown(
         padding: 1.1rem 1.3rem;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
         transition: transform 0.1s ease, box-shadow 0.15s ease;
+        container-type: inline-size;
     }}
     [data-testid="stMetric"]:hover {{
         transform: translateY(-2px);
@@ -316,6 +319,19 @@ st.markdown(
         font-weight: 800;
         letter-spacing: -0.01em;
         color: {_TEXT};
+        /* clamp(min, preferred, max) — 카드 width 에 맞춰 자동 축소.
+           긴 숫자도 한 줄에 다 보이도록 nowrap + ellipsis 제거. */
+        font-size: clamp(0.85rem, 11cqw, 1.7rem) !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
+    }}
+    [data-testid="stMetricValue"] > div {{
+        font-size: inherit !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
     }}
     [data-testid="stMetricLabel"] {{
         color: {_TEXT_MUTED} !important;
