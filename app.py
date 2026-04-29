@@ -1445,146 +1445,190 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
 
 
 # --------------------------------------------------------------------------
-# 메인
+# 페이지: 조회 폼 / 결과
 # --------------------------------------------------------------------------
 
-def main() -> None:
-    require_password()
+def _render_query_form(*, key_suffix: str = "") -> dict | None:
+    """파일 업로드 + 매출 종류 + 추정 옵션 + 콘텐츠 선택. 조회 누르면 dict, 아니면 None."""
+    st.subheader("1. 엑셀 파일 업로드")
+    files = st.file_uploader(
+        "연도별 콘텐츠 매직시트 (.xlsx)",
+        type=["xlsx"],
+        accept_multiple_files=True,
+        key=f"uploader{key_suffix}",
+    )
+    if files:
+        st.session_state["file_datas"] = [(f.name, f.getvalue()) for f in files]
 
-    _render_title("SVOD 콘텐츠 매출 분석")
-    st.caption("왓챠 '콘텐츠 매직시트' 엑셀 파일 업로드 → 콘텐츠 ID 1~3개 + 매출 종류 선택 → 연도별·월별 매출 비교")
+    file_datas = st.session_state["file_datas"]
+    if file_datas:
+        detected, unknown = [], []
+        for fname, _ in file_datas:
+            y = _detect_year_from_filename(fname)
+            (detected if y else unknown).append(y if y else fname)
+        detected.sort()
+        if detected:
+            st.success(f"📅 감지된 연도: {', '.join(str(y) for y in detected)}")
+        if unknown:
+            st.warning(f"⚠️ 연도 감지 실패: {', '.join(unknown)}")
 
-    if "file_datas" not in st.session_state:
-        st.session_state["file_datas"] = []  # list[(filename, bytes)]
+    if not file_datas:
+        st.info("먼저 엑셀 파일을 업로드해주세요.")
+        return None
 
-    with st.sidebar:
-        st.header("1. 엑셀 파일 업로드")
-        files = st.file_uploader(
-            "연도별 콘텐츠 매직시트 (.xlsx)",
-            type=["xlsx"],
-            accept_multiple_files=True,
-            help="파일명에 연도(예: 2025)가 포함되어야 합니다.",
+    st.subheader("2. 매출 종류 필터")
+    selected_categories: list[str] = []
+    with st.spinner("매출 종류 추출 중..."):
+        available_cats = extract_sales_categories(file_datas)
+    if available_cats:
+        selected_categories = st.multiselect(
+            "포함할 매출 종류 (미선택 = 전체)",
+            options=available_cats,
+            default=available_cats,
+            key=f"cats{key_suffix}",
         )
-        if files:
-            st.session_state["file_datas"] = [(f.name, f.getvalue()) for f in files]
+    else:
+        st.caption("매출 종류를 찾지 못했습니다.")
 
-        file_datas = st.session_state["file_datas"]
-
-        if file_datas:
-            detected = []
-            unknown = []
-            for fname, _ in file_datas:
-                y = _detect_year_from_filename(fname)
-                if y:
-                    detected.append(y)
-                else:
-                    unknown.append(fname)
-            detected.sort()
-            if detected:
-                st.success(f"📅 감지된 연도: {', '.join(str(y) for y in detected)}")
-            if unknown:
-                st.warning(f"⚠️ 연도 감지 실패: {', '.join(unknown)}")
-
-        st.divider()
-        st.header("2. 매출 종류 필터")
-        selected_categories: list[str] = []
-        if file_datas:
-            with st.spinner("매출 종류 추출 중..."):
-                available_cats = extract_sales_categories(file_datas)
-            if available_cats:
-                selected_categories = st.multiselect(
-                    "포함할 매출 종류 (미선택 = 전체)",
-                    options=available_cats,
-                    default=available_cats,
-                    help="예: B-1, B-2, B-3J ...",
-                )
-            else:
-                st.caption("매출 종류를 찾지 못했습니다.")
-        else:
-            st.caption("먼저 파일을 업로드하세요.")
-
-        st.divider()
-        st.header("3. 추정 매출 옵션")
-        st.caption(
-            "정산금이 미세팅된 콘텐츠/연도는 매직시트 공식으로 자동 추정됩니다. "
-            "콘텐츠별 요율은 조회 후 결과 화면에서 따로 조정할 수 있어요."
+    st.subheader("3. 추정 매출 옵션")
+    st.caption(
+        "정산금이 미세팅된 콘텐츠/연도는 매직시트 공식으로 자동 추정됩니다. "
+        "콘텐츠별 요율은 결과 화면에서 따로 조정할 수 있어요."
+    )
+    estimate_bill_type = "B-1"
+    with st.spinner("sales_log 매출 종류 추출 중..."):
+        bill_types = extract_sales_log_types(file_datas)
+    if bill_types:
+        default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
+        estimate_bill_type = st.selectbox(
+            "추정 매출 종류",
+            options=bill_types,
+            index=default_idx,
+            key=f"bill_type{key_suffix}",
         )
-        estimate_bill_type = "B-1"
-        default_rate = 0.5
-        if file_datas:
-            with st.spinner("sales_log 매출 종류 추출 중..."):
-                bill_types = extract_sales_log_types(file_datas)
-            if bill_types:
-                default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
-                estimate_bill_type = st.selectbox(
-                    "추정 매출 종류",
-                    options=bill_types,
-                    index=default_idx,
-                    help="정산금 미세팅 콘텐츠에 적용할 매출 종류 (예: B-1).",
-                )
-            else:
-                st.caption("sales_log 에서 매출 종류를 찾지 못함")
-        default_rate = st.number_input(
-            "기본 요율 (신규 콘텐츠 초기값)",
-            min_value=0.0, max_value=10.0, value=0.5, step=0.1,
-            format="%.2f",
-            help="콘텐츠를 새로 선택하면 이 값이 초기 요율로 들어갑니다. "
-                 "조회 후 결과 페이지에서 콘텐츠별로 따로 조정할 수 있습니다.",
+    else:
+        st.caption("sales_log 에서 매출 종류를 찾지 못함")
+    default_rate = st.number_input(
+        "기본 요율 (신규 콘텐츠 초기값)",
+        min_value=0.0, max_value=10.0, value=0.5, step=0.1,
+        format="%.2f",
+        key=f"default_rate{key_suffix}",
+    )
+
+    st.subheader("4. 콘텐츠 선택")
+    content_ids: list[str] = []
+    with st.spinner("콘텐츠 목록 불러오는 중..."):
+        all_contents = extract_all_contents(file_datas)
+    if all_contents:
+        options = [_format_content_option(c) for c in all_contents]
+        option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
+        selected = st.multiselect(
+            f"콘텐츠 선택 (최대 3개 · 총 {len(all_contents):,}개)",
+            options=options,
+            max_selections=3,
+            placeholder="제목 또는 콘텐츠 ID 입력 후 선택",
+            key=f"content_select{key_suffix}",
         )
+        content_ids = [option_to_id[s] for s in selected]
+    else:
+        st.caption("콘텐츠 목록을 추출하지 못했습니다.")
 
-        st.divider()
-        st.header("4. 콘텐츠 선택")
-        content_ids: list[str] = []
-        if file_datas:
-            with st.spinner("콘텐츠 목록 불러오는 중..."):
-                all_contents = extract_all_contents(file_datas)
-            if all_contents:
-                options = [_format_content_option(c) for c in all_contents]
-                option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
-                selected = st.multiselect(
-                    f"콘텐츠 선택 (최대 3개 · 총 {len(all_contents):,}개에서 제목/ID 검색)",
-                    options=options,
-                    max_selections=3,
-                    placeholder="제목 또는 콘텐츠 ID 입력 후 선택",
-                )
-                content_ids = [option_to_id[s] for s in selected]
-            else:
-                st.caption("콘텐츠 목록을 추출하지 못했습니다.")
-        else:
-            st.caption("먼저 파일을 업로드하세요.")
-
-        run = st.button("조회", type="primary", use_container_width=True)
-
-    if not st.session_state["file_datas"]:
-        st.info("👈 먼저 왼쪽 사이드바에서 **엑셀 파일을 업로드** 하세요.")
-        return
-
-    # 조회 버튼이 눌리면 query 스냅샷을 세션에 저장.
-    # 이후 요율 변경에 의한 rerun 에서도 같은 query 로 재계산.
-    if run:
+    if st.button("조회", type="primary", use_container_width=True, key=f"run{key_suffix}"):
         if not content_ids:
             st.warning("콘텐츠를 1개 이상 선택해주세요.")
-            return
-        st.session_state["query"] = {
+            return None
+        return {
             "content_ids": content_ids,
             "selected_categories": selected_categories,
             "estimate_bill_type": estimate_bill_type,
             "default_rate": default_rate,
         }
+    return None
+
+
+def _render_quick_content_picker() -> dict | None:
+    """결과 페이지 상단용 — 콘텐츠 multiselect + 재조회. 옵션 변경은 처음으로."""
+    file_datas = st.session_state["file_datas"]
+    if not file_datas:
+        st.caption("파일이 없습니다. ‘← 처음으로’ 에서 다시 업로드하세요.")
+        return None
+    q_prev = st.session_state.get("query", {})
+
+    with st.spinner("콘텐츠 목록 불러오는 중..."):
+        all_contents = extract_all_contents(file_datas)
+    options = [_format_content_option(c) for c in all_contents]
+    option_to_id = {_format_content_option(c): c["id"] for c in all_contents}
+    id_to_option = {v: k for k, v in option_to_id.items()}
+
+    default_options = [
+        id_to_option[c] for c in q_prev.get("content_ids", []) if c in id_to_option
+    ]
+    selected = st.multiselect(
+        "콘텐츠 (최대 3개)",
+        options=options,
+        default=default_options,
+        max_selections=3,
+        placeholder="제목 또는 콘텐츠 ID 입력",
+        key="quick_content_picker",
+    )
+    content_ids = [option_to_id[s] for s in selected]
+
+    if st.button("재조회", type="primary", key="quick_run"):
+        if not content_ids:
+            st.warning("콘텐츠를 1개 이상 선택해주세요.")
+            return None
+        new_q = dict(q_prev)
+        new_q["content_ids"] = content_ids
+        return new_q
+    return None
+
+
+def _go_to_query_page() -> None:
+    """결과 페이지에서 조회 페이지로 돌아갈 때 호출. 콘텐츠별 요율 widget state 초기화."""
+    for k in list(st.session_state.keys()):
+        if isinstance(k, str) and k.startswith("rate_"):
+            del st.session_state[k]
+    st.session_state["step"] = "query"
+
+
+def render_query_page() -> None:
+    st.caption("왓챠 ‘콘텐츠 매직시트’ 엑셀 업로드 → 콘텐츠 ID 1~3개 + 매출 종류 선택 → 결과 화면")
+    new_q = _render_query_form()
+    if new_q is not None:
+        st.session_state["query"] = new_q
+        st.session_state["step"] = "result"
+        st.rerun()
+
+
+def render_result_page() -> None:
+    nav_col, _ = st.columns([1, 5])
+    with nav_col:
+        if st.button("← 처음으로", type="secondary", use_container_width=True, key="back_to_query"):
+            _go_to_query_page()
+            st.rerun()
+
+    # 상단 빠른 콘텐츠 변경
+    with st.expander("🔍 콘텐츠 조회 / 추가", expanded=False):
+        new_q = _render_quick_content_picker()
+        if new_q is not None:
+            st.session_state["query"] = new_q
+            for k in list(st.session_state.keys()):
+                if isinstance(k, str) and k.startswith("rate_"):
+                    del st.session_state[k]
+            st.rerun()
 
     q = st.session_state.get("query")
     if not q:
-        st.info("👈 콘텐츠를 선택하고 **조회** 를 눌러주세요.")
+        st.info("‘← 처음으로’ 에서 다시 조회해주세요.")
         return
 
-    # 콘텐츠 라벨 맵 (요율 에디터에서 제목 표시용)
+    # 콘텐츠 라벨 맵 (요율 에디터 표시용)
     label_map: dict[str, str] = {}
     if st.session_state["file_datas"]:
         for c in extract_all_contents(st.session_state["file_datas"]):
             label_map[c["id"]] = f"{c['title']} ({c['id']})" if c["title"] else c["id"]
 
-    # 콘텐츠별 요율 에디터 — 항상 노출.
-    # 정산금 미세팅 콘텐츠/연도에만 실제로 적용됨 (실제 정산금 있는 곳은 그 값 그대로).
+    # 콘텐츠별 요율 에디터
     rates: dict[str, float] = {}
     if q["content_ids"]:
         st.subheader("⚙️ 콘텐츠별 요율 설정")
@@ -1597,7 +1641,6 @@ def main() -> None:
         for col, cid in zip(rate_cols, q["content_ids"]):
             with col:
                 widget_key = f"rate_{cid}"
-                # 초기값: 이미 위젯에 값이 있으면 그대로, 없으면 query 시점의 default_rate
                 initial = st.session_state.get(widget_key, q["default_rate"])
                 rates[cid] = st.number_input(
                     f"📺 {label_map.get(cid, cid)}",
@@ -1630,11 +1673,8 @@ def main() -> None:
     if df.empty:
         st.warning(
             "선택한 콘텐츠에 **매출 데이터가 없습니다.**\n\n"
-            "아래 중 하나에 해당할 수 있어요:\n"
-            "- 매직시트의 `Confidential` 시트에 `type=정산금(rs기준)` 행이 아직 세팅되지 않은 콘텐츠 "
-            "(매출 종류·요율 입력 전)\n"
-            f"- 선택한 매출 종류 필터에 해당 콘텐츠의 매출이 포함되지 않음 "
-            f"(사이드바 '2. 매출 종류 필터' 를 전체로 바꿔서 재조회 해보세요)"
+            "- 매직시트의 `Confidential` 시트에 `type=정산금(rs기준)` 행이 아직 세팅되지 않은 콘텐츠일 수 있어요.\n"
+            "- 또는 매출 종류 필터에 해당 콘텐츠의 매출이 포함되지 않을 수 있어요. ‘← 처음으로’ 에서 필터를 다시 설정해 보세요."
         )
         return
 
@@ -1643,7 +1683,6 @@ def main() -> None:
     if missing:
         st.warning(f"다음 ID는 어느 파일에서도 찾지 못했습니다: {', '.join(missing)}")
 
-    # 비교 대상 콘텐츠 요약 + 엑셀 다운로드 버튼 (한 줄)
     labels = _content_labels(df, found_ids)
     summary_col, download_col = st.columns([4, 1])
     with summary_col:
@@ -1657,19 +1696,13 @@ def main() -> None:
             st.download_button(
                 "📥 엑셀 다운로드",
                 data=excel_bytes,
-                file_name=(
-                    f"watcha_svod_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
-                ),
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
+                file_name=f"watcha_svod_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
-        except Exception as exc:  # pragma: no cover - 안전망
+        except Exception as exc:
             st.caption(f"⚠️ 엑셀 생성 실패: {exc}")
 
-    # 추정치 포함 여부 배너 (콘텐츠별 요율 표시)
     if "is_estimate" in df.columns and df["is_estimate"].any():
         estimated_pairs = df[df["is_estimate"]].groupby("content_id")["year"].unique()
         parts = []
@@ -1679,29 +1712,23 @@ def main() -> None:
             parts.append(f"**{labels.get(cid, cid)}** · 요율 `{applied_rate:.2f}` · ({yr_txt})")
         st.info(
             "💡 아래 데이터에 **추정치**가 포함되어 있습니다 "
-            f"(매출종류 `{q['estimate_bill_type']}` 가정): "
-            + " / ".join(parts)
+            f"(매출종류 `{q['estimate_bill_type']}` 가정): " + " / ".join(parts)
         )
     st.divider()
 
-    # 1) 시간 추이 라인 차트 (비주얼 비교 먼저)
     st.subheader("📈 매출 추이 비교")
     render_comparison_chart(df)
 
-    # 2) FLAT 예상 금액
     st.subheader("💰 FLAT 예상 금액")
     render_flat_estimates(df, found_ids)
 
-    # 3) 연간 합계 비교 테이블
     st.subheader("📋 연간 합계 비교")
     render_yearly_comparison(df, found_ids)
 
-    # 3) 월별 상세 비교 테이블
     st.subheader("📋 월별 상세 비교")
     st.caption("전체 기간의 연-월 × 콘텐츠 매출 (스크롤 가능)")
     render_monthly_comparison(df, found_ids)
 
-    # 4) 콘텐츠별 상세 피벗 (기본 접힘)
     st.divider()
     st.subheader("🔍 콘텐츠별 상세")
     for cid in found_ids:
@@ -1710,6 +1737,26 @@ def main() -> None:
             render_yearly_summary(sub)
             st.caption("연도 × 월 매출")
             render_pivot(sub)
+
+
+# --------------------------------------------------------------------------
+# 메인 — 페이지 분기 (auth → query → result)
+# --------------------------------------------------------------------------
+
+def main() -> None:
+    require_password()
+
+    _render_title("SVOD 콘텐츠 매출 분석")
+
+    if "step" not in st.session_state:
+        st.session_state["step"] = "query"
+    if "file_datas" not in st.session_state:
+        st.session_state["file_datas"] = []
+
+    if st.session_state["step"] == "result":
+        render_result_page()
+    else:
+        render_query_page()
 
 
 if __name__ == "__main__":
