@@ -1599,15 +1599,42 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
     with st.spinner("sales_log 매출 종류 추출 중..."):
         bill_types = extract_sales_log_types(file_datas)
     if bill_types:
-        default_idx = bill_types.index("B-1") if "B-1" in bill_types else 0
-        # selectbox 의 dropdown 도 같은 위험 → radio 로 교체 (popover 사용 X)
-        estimate_bill_type = st.radio(
-            "추정 매출 종류",
-            options=bill_types,
-            index=default_idx,
-            horizontal=True,
-            key=f"bill_type{key_suffix}",
-        )
+        has_b1 = "B-1" in bill_types
+        others = [b for b in bill_types if b != "B-1"]
+        if has_b1:
+            # 기본은 B-1 만 표시. 다른 종류 필요할 때만 체크박스로 펼쳐 선택.
+            show_others_key = f"show_other_bill{key_suffix}"
+            if show_others_key not in st.session_state:
+                st.session_state[show_others_key] = False
+            show_others = (
+                st.checkbox(
+                    f"기타 매출 종류에서 선택 ({len(others)}개)",
+                    key=show_others_key,
+                )
+                if others
+                else False
+            )
+            if show_others:
+                default_idx = bill_types.index("B-1")
+                estimate_bill_type = st.radio(
+                    "추정 매출 종류",
+                    options=bill_types,
+                    index=default_idx,
+                    horizontal=True,
+                    key=f"bill_type{key_suffix}",
+                )
+            else:
+                st.markdown("추정 매출 종류: **B-1** (기본)")
+                estimate_bill_type = "B-1"
+        else:
+            # B-1 이 없는 환경 fallback — 그냥 전체에서 radio
+            estimate_bill_type = st.radio(
+                "추정 매출 종류",
+                options=bill_types,
+                index=0,
+                horizontal=True,
+                key=f"bill_type{key_suffix}",
+            )
     else:
         st.caption("sales_log 에서 매출 종류를 찾지 못함")
     default_rate = st.number_input(
