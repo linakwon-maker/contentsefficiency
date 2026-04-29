@@ -316,7 +316,7 @@ def require_password() -> None:
         )
         st.stop()
 
-    _render_title("WATCHA SVOD 콘텐츠 매출 분석")
+    _render_title("SVOD 콘텐츠 매출 분석")
     st.write("비밀번호를 입력하세요.")
     pw = st.text_input("비밀번호", type="password", label_visibility="collapsed")
     if st.button("입장"):
@@ -1396,7 +1396,7 @@ def render_comparison_chart(df: pd.DataFrame) -> None:
 def main() -> None:
     require_password()
 
-    _render_title("WATCHA SVOD 콘텐츠 매출 분석")
+    _render_title("SVOD 콘텐츠 매출 분석")
     st.caption("왓챠 '콘텐츠 매직시트' 엑셀 파일 업로드 → 콘텐츠 ID 1~3개 + 매출 종류 선택 → 연도별·월별 매출 비교")
 
     if "file_datas" not in st.session_state:
