@@ -102,19 +102,20 @@ st.markdown(
         display: none !important;
     }}
 
-    /* 파일 업로더 영역은 글로벌 폰트 강제에서 제외 — Streamlit 이 사용하는
-       Material Icons / Symbols 폰트 매핑이 한글 폰트로 깨지는 문제 차단.
-       파일 항목의 삭제(×) 버튼 등 ligature 아이콘이 정상 표시되도록 함. */
-    [data-testid="stFileUploader"],
-    [data-testid="stFileUploader"] *,
-    [data-testid="stFileUploader"] *::before,
-    [data-testid="stFileUploader"] *::after {{
-        font-family: revert !important;
-    }}
-    /* 단, 우리가 직접 주입한 '파일 선택' 라벨은 한글 폰트 유지 */
-    [data-testid="stFileUploader"] button::after {{
+    /* multiselect/selectbox dropdown 은 portal 로 body 에 마운트되어
+       글로벌 [class*="st-"] 셀렉터에 안 잡힘 → 폰트·글자색 명시. */
+    [data-baseweb="popover"],
+    [data-baseweb="popover"] *,
+    [data-baseweb="menu"],
+    [data-baseweb="menu"] *,
+    ul[role="listbox"],
+    ul[role="listbox"] *,
+    li[role="option"],
+    li[role="option"] * {{
+        color: {_TEXT} !important;
         font-family: "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont,
-            "Pretendard", "Malgun Gothic", sans-serif !important;
+            "Pretendard", "Malgun Gothic", "Segoe UI", Roboto,
+            "Apple Color Emoji", "Segoe UI Emoji", sans-serif !important;
     }}
 
     /* 페이지: 흰톤 베이스 (원복) */
@@ -250,31 +251,12 @@ st.markdown(
     [data-testid="stFileUploader"] section:hover {{
         background: {_PINK_TINT} !important;
     }}
-    /* 환경/버전에 따라 button 안 텍스트('upload' 등) 가 두 번 렌더되는
-       문제를 해결: 기존 자식 모두 가리고 ::after 로 라벨 한 번 주입 */
+    /* fileUploader 안의 모든 button(메인 업로드 버튼 + 파일 항목 옆
+       삭제 X 등) 일체 숨김. 깨진 ligature 글자('웹','일선' 등) 가
+       button 안에 들어 있으므로 button 자체를 숨겨 깔끔히 제거.
+       파일 추가는 dropzone 영역 클릭/드래그로 가능. */
     [data-testid="stFileUploader"] button {{
-        position: relative !important;
-        color: transparent !important;
-        overflow: hidden !important;
-        min-height: 38px !important;
-    }}
-    [data-testid="stFileUploader"] button > * {{
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }}
-    [data-testid="stFileUploader"] button::after {{
-        content: "파일 선택";
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: {_TEXT};
-        font-size: 0.88rem;
-        font-weight: 600;
-        font-family: inherit;
-        letter-spacing: 0;
-        visibility: visible !important;
+        display: none !important;
     }}
 
     /* 메트릭 카드 — 흰 베이스 + 핑크 보더, 호버 시 핑크 그림자 */
