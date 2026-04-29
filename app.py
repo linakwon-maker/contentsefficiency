@@ -1602,19 +1602,15 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
         has_b1 = "B-1" in bill_types
         others = [b for b in bill_types if b != "B-1"]
         if has_b1:
-            # 기본은 B-1 만 표시. 다른 종류 필요할 때만 체크박스로 펼쳐 선택.
+            # 기본은 B-1 만 표시. '기타 매출 종류에서 선택' 체크박스를 추정
+            # 매출 종류 라벨 '아래' 에 두어, 시선 흐름이 라벨 → 체크박스 →
+            # (필요 시) 펼쳐진 radio 가 되도록 함.
             show_others_key = f"show_other_bill{key_suffix}"
             if show_others_key not in st.session_state:
                 st.session_state[show_others_key] = False
-            show_others = (
-                st.checkbox(
-                    f"기타 매출 종류에서 선택 ({len(others)}개)",
-                    key=show_others_key,
-                )
-                if others
-                else False
-            )
-            if show_others:
+            show_others_prev = st.session_state[show_others_key]
+
+            if show_others_prev:
                 default_idx = bill_types.index("B-1")
                 estimate_bill_type = st.radio(
                     "추정 매출 종류",
@@ -1626,6 +1622,12 @@ def _render_query_form(*, key_suffix: str = "") -> dict | None:
             else:
                 st.markdown("추정 매출 종류: **B-1** (기본)")
                 estimate_bill_type = "B-1"
+
+            if others:
+                st.checkbox(
+                    f"기타 매출 종류에서 선택 ({len(others)}개)",
+                    key=show_others_key,
+                )
         else:
             # B-1 이 없는 환경 fallback — 그냥 전체에서 radio
             estimate_bill_type = st.radio(
