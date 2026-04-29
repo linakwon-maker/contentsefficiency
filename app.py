@@ -338,6 +338,15 @@ st.markdown(
         font-size: 0.82rem !important;
         font-weight: 600;
     }}
+    /* '2022 합계' / '전체 합계' 등 라벨에 연한 핑크 하이라이트 */
+    [data-testid="stMetricLabel"] > div,
+    [data-testid="stMetricLabel"] p {{
+        background-color: {_PINK_TINT} !important;
+        padding: 3px 10px !important;
+        border-radius: 8px !important;
+        display: inline-block !important;
+        width: auto !important;
+    }}
 
     /* expander — 라이트 카드 */
     [data-testid="stExpander"] {{
