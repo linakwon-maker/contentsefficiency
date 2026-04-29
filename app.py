@@ -1065,6 +1065,20 @@ def _load_sales_cached(
     )
 
 
+_NUM_FORMAT_THOUSANDS = "#,##0"
+
+
+def _apply_thousands_format(worksheet, *, has_index: bool) -> None:
+    """워크시트의 모든 숫자 셀에 천단위 구분기호 표시 형식 적용.
+    문자열·날짜 등은 isinstance 체크로 자동 skip.
+    """
+    min_col = 2 if has_index else 1  # 헤더 1행 / 인덱스 1열 점유 가정
+    for row in worksheet.iter_rows(min_row=2, min_col=min_col):
+        for cell in row:
+            if isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool):
+                cell.number_format = _NUM_FORMAT_THOUSANDS
+
+
 def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
     """현재 조회 결과를 다중 시트 엑셀로 직렬화."""
     labels = _content_labels(df, ordered_ids)
@@ -1083,6 +1097,7 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
         monthly.columns = [labels[c] for c in monthly.columns]
         monthly.index.name = "연-월"
         monthly.to_excel(writer, sheet_name="월별 상세")
+        _apply_thousands_format(writer.sheets["월별 상세"], has_index=True)
 
         # 2) 연간 합계
         yearly = (
@@ -1092,11 +1107,13 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
         yearly.columns = [labels[c] for c in yearly.columns]
         yearly.index.name = "연도"
         yearly.to_excel(writer, sheet_name="연간 합계")
+        _apply_thousands_format(writer.sheets["연간 합계"], has_index=True)
 
         # 3) FLAT 예상
         compute_flat_estimates(df, ordered_ids).to_excel(
             writer, sheet_name="FLAT 예상", index=False,
         )
+        _apply_thousands_format(writer.sheets["FLAT 예상"], has_index=False)
 
         # 4) 콘텐츠별 피벗 — 시트 하나당 한 콘텐츠 (연간 합계·평균·총합 포함)
         used_names: set[str] = set()
@@ -1133,6 +1150,7 @@ def build_excel_export(df: pd.DataFrame, ordered_ids: list[str]) -> bytes:
                 n += 1
             used_names.add(candidate)
             piv.to_excel(writer, sheet_name=candidate)
+            _apply_thousands_format(writer.sheets[candidate], has_index=True)
 
     return buffer.getvalue()
 
