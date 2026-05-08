@@ -813,40 +813,92 @@ def extract_sales_log_types(file_datas: list) -> list:
 # 매출 종류 추출 (사이드바 필터용)
 # --------------------------------------------------------------------------
 
+def _absorb_id_title_pairs(seen: dict, df: pd.DataFrame) -> None:
+    """주어진 DataFrame 에서 (id, title) 쌍을 추출해 seen 에 병합.
+    같은 id 가 이미 있고 기존 title 이 비었으면 새 title 로 덮어씀.
+    """
+    if df is None or df.empty:
+        return
+    cols = list(df.columns)
+    id_col = _find_column(cols, ID_COLUMN_CANDIDATES)
+    if id_col is None:
+        return
+    title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
+
+    ids = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+    valid = ids.notna() & (ids != "") & (~ids.str.lower().isin({"nan", "none"}))
+    if title_col is not None:
+        titles = df[title_col].where(df[title_col].notna(), "").astype(str).str.strip()
+    else:
+        titles = pd.Series([""] * len(df), index=df.index)
+
+    for cid, title in zip(ids[valid].tolist(), titles[valid].tolist()):
+        if cid not in seen or (not seen[cid] and title):
+            seen[cid] = title
+
+
+@st.cache_data(show_spinner=False)
+def _log_sheet_id_title_pairs(data: bytes, keyword: str) -> list[tuple[str, str]]:
+    """viewing_log / sales_log 시트에서 distinct (content_id, title) 만 추출.
+
+    필요한 컬럼만 읽어 메모리·시간 절약 (큰 로그 시트 대응). 시트·컬럼 부재 시 빈 리스트.
+    title 컬럼이 없으면 (id, "") 형태로 반환 → ID 로만 검색 가능.
+    """
+    sheet_names = _get_sheet_names(data)
+    matched = next((n for n in sheet_names if keyword in str(n).lower()), None)
+    if matched is None:
+        return []
+    try:
+        head = _read_excel_safe(BytesIO(data), sheet_name=matched, nrows=0)
+    except Exception:
+        return []
+    cols = list(head.columns)
+    id_col = _find_column(cols, ID_COLUMN_CANDIDATES)
+    if id_col is None:
+        return []
+    title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
+    use_cols = [id_col] + ([title_col] if title_col else [])
+    try:
+        df = _read_excel_safe(
+            BytesIO(data), sheet_name=matched, usecols=use_cols, dtype=str,
+        )
+    except Exception:
+        return []
+    if df.empty:
+        return []
+    df = df.drop_duplicates()
+    seen: dict[str, str] = {}
+    _absorb_id_title_pairs(seen, df)
+    return list(seen.items())
+
+
 @st.cache_data(show_spinner=False)
 def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
     """업로드된 파일에서 모든 콘텐츠(id, title) 목록 수집.
 
-    - type 필터 걸지 않음 → 정산금 미세팅 콘텐츠도 목록에 포함 (선택 가능하게)
-    - 같은 ID가 여러 행에 나오면 제목 있는 행을 우선 채택 (보통 type=시청분수 행에 title 있음)
+    - Confidential 시트뿐 아니라 viewing_log / sales_log 시트도 훑어 합집합 반환
+      → RS 정산 행이 없는 콘텐츠(예: FLAT 라이센스)도 검색·선택 가능
+    - type 필터 걸지 않음 → 정산금 미세팅 콘텐츠도 목록에 포함
+    - 같은 ID가 여러 곳에 나오면 제목 있는 쪽을 우선 채택
     """
     seen: dict[str, str] = {}
     for _, data in file_datas:
         try:
-            df = _read_content_sheet(data)
+            _absorb_id_title_pairs(seen, _read_content_sheet(data))
         except Exception:
-            continue
-        if df.empty:
-            continue
-        cols = list(df.columns)
-        id_col = _find_column(cols, ID_COLUMN_CANDIDATES)
-        title_col = _find_column(cols, TITLE_COLUMN_CANDIDATES)
-        if id_col is None:
-            continue
-
-        # 벡터화: iterrows 대신 컬럼 단위 처리
-        ids = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
-        valid = ids.notna() & (ids != "") & (~ids.str.lower().isin({"nan", "none"}))
-        if title_col is not None:
-            titles = df[title_col].where(df[title_col].notna(), "").astype(str).str.strip()
-        else:
-            titles = pd.Series([""] * len(df), index=df.index)
-
-        ids_v = ids[valid].tolist()
-        titles_v = titles[valid].tolist()
-        for cid, title in zip(ids_v, titles_v):
-            if cid not in seen or (not seen[cid] and title):
-                seen[cid] = title
+            pass
+        try:
+            for cid, title in _log_sheet_id_title_pairs(data, "viewing"):
+                if cid not in seen or (not seen[cid] and title):
+                    seen[cid] = title
+        except Exception:
+            pass
+        try:
+            for cid, title in _log_sheet_id_title_pairs(data, "sales_log"):
+                if cid not in seen or (not seen[cid] and title):
+                    seen[cid] = title
+        except Exception:
+            pass
     result = [{"id": cid, "title": t} for cid, t in seen.items()]
     result.sort(key=lambda r: (r["title"] == "", r["title"].lower(), r["id"]))
     return result
