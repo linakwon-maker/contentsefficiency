@@ -1637,6 +1637,12 @@ def render_monthly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
     pivot.columns = [labels[c] for c in pivot.columns]
     pivot.index.name = "연-월"
 
+    # 마지막으로 매출이 발생한 월까지만 표시 (이후 trailing 0/NaN 행 제거)
+    nonzero = pivot.fillna(0).ne(0).any(axis=1)
+    if nonzero.any():
+        last_period = nonzero[nonzero].index[-1]
+        pivot = pivot.loc[:last_period]
+
     st.dataframe(
         pivot.style.format("{:,.0f}", na_rep="-"),
         use_container_width=True,
