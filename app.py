@@ -1580,13 +1580,16 @@ def build_excel_export(
         monthly.to_excel(writer, sheet_name="월별 상세")
         _apply_thousands_format(writer.sheets["월별 상세"], has_index=True)
 
-        # 2) 연간 합계
+        # 2) 연간 합계 (마지막 행에 콘텐츠별 총합)
         yearly = (
             df.groupby(["year", "content_id"])["revenue"].sum()
             .unstack("content_id").reindex(columns=ordered_ids).sort_index()
         )
         yearly.columns = [labels[c] for c in yearly.columns]
+        yearly.index = yearly.index.astype(object)
         yearly.index.name = "연도"
+        if not yearly.empty:
+            yearly.loc["총합"] = yearly.sum(axis=0, skipna=True)
         yearly.to_excel(writer, sheet_name="연간 합계")
         _apply_thousands_format(writer.sheets["연간 합계"], has_index=True)
 
