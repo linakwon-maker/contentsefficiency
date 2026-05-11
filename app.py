@@ -1046,6 +1046,7 @@ def load_sales_from_uploads(
     estimate_bill_type: str = "B-1",
     estimate_rates: dict[str, float] | None = None,
     default_rate: float = 0.5,
+    apply_rate_to_actuals: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, str], dict[int, str]]:
     """업로드 엑셀에서 선택 콘텐츠의 월별 매출 long format 반환.
 
@@ -1054,6 +1055,8 @@ def load_sales_from_uploads(
       viewing_log + sales_log 기반 매직시트 공식으로 추정
       반환 df 의 is_estimate 컬럼에 True 표시됨
     - estimate_rates: 콘텐츠 ID → 요율 매핑. 없으면 default_rate 사용.
+    - apply_rate_to_actuals=True: 실제 정산금이 있는 (콘텐츠, 연도) 도
+      요율 기반 추정으로 덮어씀. log 데이터가 없어 추정이 불가하면 실제값 유지.
     """
     if estimate_rates is None:
         estimate_rates = {}
@@ -1177,7 +1180,7 @@ def load_sales_from_uploads(
             )
 
         # 추정용: 연도별 raw bytes 만 보관 (viewing_log/sales_log 는 캐시된 헬퍼가 lazy 로 처리)
-        if estimate_missing:
+        if estimate_missing or apply_rate_to_actuals:
             sheets_by_year[year] = data
 
         # 콘텐츠 제목은 Confidential 전체에서도 수집 (매칭 안 된 ID 용) — 벡터화
@@ -1190,12 +1193,15 @@ def load_sales_from_uploads(
 
         file_status[filename] = f"✅ {year}년 · {matched_rows}개 행 매칭 (정산금 기준)"
 
-    # 추정: (콘텐츠, 연도) 조합 중 실제 정산금 데이터 없으면 공식으로 추정
+    # 추정: (콘텐츠, 연도) 조합 중 실제 정산금 데이터 없으면 공식으로 추정.
+    # apply_rate_to_actuals=True 면 실제값이 있어도 요율 기반 추정으로 덮어씀.
     estimate_log: list = []
-    if estimate_missing:
+    override_keys: set = set()  # (year, cid) — 실제 정산금을 추정으로 덮어쓴 키
+    if estimate_missing or apply_rate_to_actuals:
         for year, year_data in sheets_by_year.items():
-            missing_ids_for_year = ids_normalized - actual_ids_by_year.get(year, set())
-            for cid in missing_ids_for_year:
+            actuals_for_year = actual_ids_by_year.get(year, set())
+            target_ids = ids_normalized if apply_rate_to_actuals else (ids_normalized - actuals_for_year)
+            for cid in target_ids:
                 rate = estimate_rates.get(cid, default_rate)
                 monthly = compute_estimated_monthly(
                     year_data, cid, estimate_bill_type, rate, year,
@@ -1213,12 +1219,27 @@ def load_sales_from_uploads(
                     "is_estimate": True,
                 })
                 rows.append(est_df)
+                if cid in actuals_for_year:
+                    override_keys.add((year, cid))
                 estimate_log.append(f"{year}년 · {cid}({title or 'ID'}) · {nonzero_count}개월 추정 (요율 {rate})")
 
         if estimate_log:
-            file_status["_추정"] = f"💡 추정 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
+            label = "추정/덮어쓰기" if apply_rate_to_actuals else "추정"
+            file_status["_추정"] = f"💡 {label} 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
 
     df_out = pd.concat(rows, ignore_index=True) if rows else empty.copy()
+    # 요율 덮어쓰기로 추정 row 가 생긴 (year, cid) 의 실제 row 는 제거 (중복 방지)
+    if override_keys and not df_out.empty:
+        years_int = pd.to_numeric(df_out["year"], errors="coerce").astype("Int64")
+        cids_str = df_out["content_id"].astype(str)
+        in_override = pd.Series(
+            [(int(y), c) in override_keys if pd.notna(y) else False
+             for y, c in zip(years_int, cids_str)],
+            index=df_out.index,
+        )
+        drop_mask = in_override & (~df_out["is_estimate"].astype(bool))
+        if drop_mask.any():
+            df_out = df_out[~drop_mask].reset_index(drop=True)
     # 빈 content_title 을 title_by_id 로 보강 (추정 row 등 제목이 누락된 경우 대응)
     if not df_out.empty and "content_title" in df_out.columns:
         empty_mask = (
@@ -1409,6 +1430,7 @@ def _load_sales(
     estimate_bill_type: str,
     estimate_rates_tuple: tuple,
     default_rate: float,
+    apply_rate_to_actuals: bool,
     _file_datas: list,
 ):
     """공유 본체. signature 기반 cache_data 래퍼가 이 함수를 호출."""
@@ -1420,6 +1442,7 @@ def _load_sales(
         estimate_bill_type=estimate_bill_type,
         estimate_rates=dict(estimate_rates_tuple),
         default_rate=default_rate,
+        apply_rate_to_actuals=apply_rate_to_actuals,
     )
 
 
@@ -1432,13 +1455,14 @@ def _load_sales_cached_by_sig(
     estimate_bill_type: str,
     estimate_rates_tuple: tuple,
     default_rate: float,
+    apply_rate_to_actuals: bool,
     _file_datas,
 ):
     """signature 만 캐시 키로 사용 (file_datas 자체는 hash 안 됨, _ 접두사로 회피)."""
     return _load_sales(
         signature, content_ids_tuple, selected_categories_tuple,
         estimate_missing, estimate_bill_type, estimate_rates_tuple,
-        default_rate, _file_datas,
+        default_rate, apply_rate_to_actuals, _file_datas,
     )
 
 
@@ -1450,6 +1474,7 @@ def _load_sales_cached(
     estimate_bill_type: str,
     estimate_rates_tuple: tuple,
     default_rate: float,
+    apply_rate_to_actuals: bool = False,
 ):
     """기존 시그니처 호환 wrapper — 내부적으로 signature 기반 캐시 사용."""
     file_datas = list(file_datas_tuple)
@@ -1457,7 +1482,7 @@ def _load_sales_cached(
     return _load_sales_cached_by_sig(
         sig, content_ids_tuple, selected_categories_tuple,
         estimate_missing, estimate_bill_type, estimate_rates_tuple,
-        default_rate, file_datas,
+        default_rate, apply_rate_to_actuals, file_datas,
     )
 
 
@@ -2032,12 +2057,13 @@ def render_result_page() -> None:
 
     # 콘텐츠별 요율 에디터
     rates: dict[str, float] = {}
+    apply_rate_to_actuals = False
     if q["content_ids"]:
         st.subheader("⚙️ 콘텐츠별 요율 설정")
         st.caption(
             f"매출 종류 **{q['estimate_bill_type']}** 기준으로 콘텐츠별 요율을 따로 설정할 수 있습니다. "
-            "정산금이 미세팅된 콘텐츠/연도에만 적용되며, 실제 정산금이 있는 부분은 시트의 값을 그대로 사용합니다. "
-            "값을 바꾸면 아래 결과가 자동으로 다시 계산됩니다."
+            "기본은 정산금이 미세팅된 콘텐츠/연도에만 적용되며, 실제 정산금이 있는 부분은 시트의 값을 그대로 사용합니다. "
+            "아래 체크박스를 켜면 실제 정산금이 있는 (콘텐츠, 연도) 도 요율 기반 추정으로 덮어씁니다."
         )
         # ★7: rate widget 의 초기값을 미리 session_state 에 set → 첫 렌더에서도
         # widget 값과 cache 호출 인자가 일치 (캐시 미스 1회 회피).
@@ -2055,6 +2081,14 @@ def render_result_page() -> None:
                     step=0.1, format="%.2f",
                     key=widget_key,
                 )
+        apply_rate_to_actuals = st.checkbox(
+            "내 요율로 실제 정산금도 덮어쓰기",
+            key="apply_rate_to_actuals",
+            help=(
+                "켜면 실제 정산금이 있는 (콘텐츠, 연도) 도 위에서 설정한 요율로 다시 계산해서 보여줍니다. "
+                "viewing_log/sales_log 데이터가 없어 추정이 불가한 (콘텐츠, 연도) 는 실제값이 그대로 표시됩니다."
+            ),
+        )
         st.divider()
 
     with st.spinner("엑셀 파일 분석 중..."):
@@ -2066,6 +2100,7 @@ def render_result_page() -> None:
             q["estimate_bill_type"],
             tuple(sorted(rates.items())),
             q["default_rate"],
+            apply_rate_to_actuals,
         )
 
     with st.expander(f"📁 파일 처리 현황 ({len(file_status)}개)", expanded=False):
