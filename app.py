@@ -1687,7 +1687,7 @@ def render_flat_estimates(df: pd.DataFrame, ordered_ids: list[str]) -> None:
 
 
 def render_yearly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
-    """연간 합계(위) + 연간 평균(아래) 비교. 행=연도, 열=콘텐츠."""
+    """연간 합계 비교. 행=연도, 열=콘텐츠. 마지막 행에 콘텐츠별 총합."""
     if df.empty:
         return
     labels = _content_labels(df, ordered_ids)
@@ -1697,7 +1697,12 @@ def render_yearly_comparison(df: pd.DataFrame, ordered_ids: list[str]) -> None:
         .reindex(columns=ordered_ids).sort_index()
     )
     pivot_sum.columns = [labels[c] for c in pivot_sum.columns]
+    pivot_sum.index = pivot_sum.index.astype(object)
     pivot_sum.index.name = "연도"
+
+    # 마지막 행: 콘텐츠별 총합 (전체 연도 합산)
+    if not pivot_sum.empty:
+        pivot_sum.loc["총합"] = pivot_sum.sum(axis=0, skipna=True)
 
     st.caption("연간 합계 (원)")
     st.dataframe(pivot_sum.style.format("{:,.0f}", na_rep="-"), use_container_width=True)
