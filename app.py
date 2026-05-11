@@ -607,7 +607,18 @@ def _excel_file_safe(data: bytes) -> pd.ExcelFile:
         return pd.ExcelFile(BytesIO(data), engine="openpyxl")
 
 
-@st.cache_data(show_spinner=False)
+def _fast_bytes_hash(data: bytes) -> str:
+    """Streamlit cache_data 의 bytes 인자 hashing 비용 제거.
+    50MB+ 엑셀을 매 호출마다 SHA256 풀해싱 → head 8KB SHA1 + length 로 교체.
+    `_file_datas_signature` 와 동일 전략."""
+    import hashlib as _h
+    return f"{len(data)}:{_h.sha1(data[:8192]).hexdigest()}"
+
+
+_FAST_BYTES_HASH = {bytes: _fast_bytes_hash}
+
+
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _get_sheet_names(data: bytes) -> list[str]:
     """엑셀의 시트 이름 목록만 반환 (가벼움, 워크북 구조만 파싱)."""
     try:
@@ -616,7 +627,7 @@ def _get_sheet_names(data: bytes) -> list[str]:
         return []
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _read_confidential_sheet(data: bytes) -> pd.DataFrame:
     """Confidential 시트만 단독 로딩 (viewing_log 안 읽음)."""
     sheet_names = _get_sheet_names(data)
@@ -634,7 +645,7 @@ def _read_confidential_sheet(data: bytes) -> pd.DataFrame:
     return body
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _read_log_sheet(data: bytes, keyword: str) -> pd.DataFrame:
     """키워드 매칭되는 단일 로그 시트(viewing_log / sales_log)만 로딩."""
     sheet_names = _get_sheet_names(data)
@@ -667,7 +678,7 @@ def _read_content_sheet(data: bytes) -> pd.DataFrame:
     return _read_confidential_sheet(data)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _viewing_log_total_by_month(data: bytes) -> dict:
     """플랫폼 전체 월별 시청분수 (콘텐츠 무관). {Timestamp: minutes}.
 
@@ -680,7 +691,7 @@ def _viewing_log_total_by_month(data: bytes) -> dict:
     return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _sales_log_by_type_month(data: bytes, bill_type: str) -> dict:
     """매출종류별 월 총매출. {Timestamp: total}. 매출종류 변경 전까진 캐시 히트."""
     sl = _read_log_sheet(data, "sales_log")
@@ -690,7 +701,7 @@ def _sales_log_by_type_month(data: bytes, bill_type: str) -> dict:
     return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _content_watch_minutes_by_month(data: bytes, content_id: str) -> dict:
     """콘텐츠 월별 시청분수 (해당 콘텐츠의 최빈 category 기준). {Timestamp: minutes}.
 
@@ -721,7 +732,7 @@ def _content_watch_minutes_by_month(data: bytes, content_id: str) -> dict:
     return {idx: float(v) for idx, v in s.items() if pd.notna(v)}
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _estimated_factor_monthly(
     data: bytes, content_id: str, bill_type: str, year: int,
 ) -> dict:
@@ -771,7 +782,7 @@ def compute_estimated_monthly(
     }
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _sales_log_type_column(data: bytes) -> pd.Series:
     """sales_log 의 type 컬럼만 단독 로드. usecols 로 1개 컬럼만 읽어 매우 가벼움."""
     sheet_names = _get_sheet_names(data)
@@ -792,7 +803,7 @@ def _sales_log_type_column(data: bytes) -> pd.Series:
     return df.get("type", pd.Series([], dtype=str))
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def extract_sales_log_types(file_datas: list) -> list:
     """모든 업로드 파일의 sales_log 에서 매출 종류(type) 유니크 값 수집.
 
@@ -837,7 +848,7 @@ def _absorb_id_title_pairs(seen: dict, df: pd.DataFrame) -> None:
             seen[cid] = title
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _log_sheet_id_title_pairs(data: bytes, keyword: str) -> list[tuple[str, str]]:
     """viewing_log / sales_log 시트에서 distinct (content_id, title) 만 추출.
 
@@ -872,7 +883,7 @@ def _log_sheet_id_title_pairs(data: bytes, keyword: str) -> list[tuple[str, str]
     return list(seen.items())
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def extract_all_contents(file_datas: list[tuple[str, bytes]]) -> list[dict]:
     """업로드된 파일에서 모든 콘텐츠(id, title) 목록 수집.
 
@@ -1011,7 +1022,7 @@ def _render_content_search_section(
             st.rerun()
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def extract_sales_categories(file_datas: list[tuple[str, bytes]]) -> list[str]:
     """업로드된 파일들의 '정산금(rs기준)' 행 중 매출 종류 유니크 값 수집."""
     categories: set[str] = set()
@@ -1038,32 +1049,22 @@ def extract_sales_categories(file_datas: list[tuple[str, bytes]]) -> list[str]:
 # 메인 데이터 로딩
 # --------------------------------------------------------------------------
 
-def load_sales_from_uploads(
-    file_datas: list[tuple[str, bytes]],
-    content_ids: list[str],
-    selected_categories: list[str] | None = None,
-    estimate_missing: bool = False,
-    estimate_bill_type: str = "B-1",
-    estimate_rates: dict[str, float] | None = None,
-    default_rate: float = 0.5,
-    apply_rate_to_actuals: bool = False,
-) -> tuple[pd.DataFrame, dict[str, str], dict[int, str]]:
-    """업로드 엑셀에서 선택 콘텐츠의 월별 매출 long format 반환.
+_EMPTY_LONG_COLUMNS = ["content_id", "content_title", "year", "month", "revenue", "is_estimate"]
 
-    - 기본: Confidential 시트의 type=정산금(rs기준) 행에서 실제 매출 집계
-    - estimate_missing=True: 정산금 행이 없는 (콘텐츠, 연도) 조합에 대해
-      viewing_log + sales_log 기반 매직시트 공식으로 추정
-      반환 df 의 is_estimate 컬럼에 True 표시됨
-    - estimate_rates: 콘텐츠 ID → 요율 매핑. 없으면 default_rate 사용.
-    - apply_rate_to_actuals=True: 실제 정산금이 있는 (콘텐츠, 연도) 도
-      요율 기반 추정으로 덮어씀. log 데이터가 없어 추정이 불가하면 실제값 유지.
+
+def _build_actual_rows(
+    file_datas: list[tuple[str, bytes]],
+    ids_normalized: frozenset,
+    selected_categories: list[str] | None,
+) -> tuple[pd.DataFrame, dict, dict, dict, dict]:
+    """요율/매출종류와 무관한 단계 — Confidential 시트에서 실제 정산금 long format 추출.
+
+    반환: (actual_df, actual_ids_by_year, title_by_id, file_status, errors).
+    캐시 wrapper (`_load_actual_rows_by_sig`) 가 이 함수를 호출.
     """
-    if estimate_rates is None:
-        estimate_rates = {}
-    ids_normalized = {str(x).strip() for x in content_ids if str(x).strip()}
-    empty = pd.DataFrame(columns=["content_id", "content_title", "year", "month", "revenue", "is_estimate"])
+    empty = pd.DataFrame(columns=_EMPTY_LONG_COLUMNS)
     if not ids_normalized or not file_datas:
-        return empty, {}, {}
+        return empty, {}, {}, {}, {}
 
     try:
         col_override = st.secrets.get("columns", {})
@@ -1072,17 +1073,12 @@ def load_sales_from_uploads(
     id_col_override = col_override.get("content_id")
     title_col_override = col_override.get("content_title")
 
-    rows: list = []  # DataFrame 또는 dict 들의 혼합. 마지막에 concat.
+    rows: list = []
     file_status: dict[str, str] = {}
     errors: dict[int, str] = {}
-    # (content_id, year) 별로 실제 정산금 데이터가 있었는지 추적 → 추정 필요 판단
     actual_ids_by_year: dict = {}
-    # 추정용: 파일별 전체 시트 데이터 보관 (연도 기반 추정 시 viewing_log/sales_log 필요)
-    sheets_by_year: dict = {}
     title_by_id: dict = {}
 
-    # 모든 업로드 파일의 알려진 (id, title) 을 미리 보강.
-    # 어느 연도 파일에는 정산금 행이 없어도 title 은 있을 수 있으므로, 추정 row 도 제목이 채워짐.
     try:
         for c in extract_all_contents(file_datas):
             if c.get("title") and c["id"] not in title_by_id:
@@ -1124,37 +1120,35 @@ def load_sales_from_uploads(
             file_status[filename] = f"❌ 월 컬럼 없음 ({year}년)"
             continue
 
-        working = df.copy()
+        working = df
         if type_col is not None:
             working = working[working[type_col].astype(str).str.strip() == REVENUE_TYPE_VALUE]
 
         if selected_categories and cat_col is not None:
             working = working[working[cat_col].astype(str).str.strip().isin(selected_categories)]
 
-        working["_id_str"] = working[id_col].astype(str).str.strip()
-        # 숫자 id 가 "3338924.0" 처럼 저장되어 있을 수 있으니 소수점 제거
-        working["_id_str"] = working["_id_str"].str.replace(r"\.0$", "", regex=True)
-        filtered = working[working["_id_str"].isin(ids_normalized)]
+        # ID 정규화는 필터링 대상 행만 — 풀스캔 회피 위해 view 에서 직접 계산
+        id_str = working[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+        keep_mask = id_str.isin(ids_normalized)
+        filtered = working[keep_mask].copy()
+        filtered["_id_str"] = id_str[keep_mask].values
 
         matched_rows = len(filtered)
         year_actual_ids: set = set(filtered["_id_str"].unique())
         actual_ids_by_year[year] = year_actual_ids
 
         if matched_rows > 0:
-            # title 컬럼 정리 (벡터)
             if title_col and title_col in filtered.columns:
                 title_series = filtered[title_col].where(filtered[title_col].notna(), "").astype(str).str.strip()
             else:
                 title_series = pd.Series([""] * matched_rows, index=filtered.index)
 
-            # title_by_id 보강 (id 별 첫 비어있지 않은 title)
             tdf = pd.DataFrame({"cid": filtered["_id_str"].values, "title": title_series.values})
             valid_titles = tdf[tdf["title"] != ""].drop_duplicates("cid")
             for cid, title in zip(valid_titles["cid"], valid_titles["title"]):
                 if cid not in title_by_id:
                     title_by_id[cid] = title
 
-            # 12개월 컬럼을 melt 로 long format 으로 한 번에 변환 (iterrows 제거)
             sub = filtered[["_id_str"] + month_cols].copy()
             sub.columns = ["content_id"] + list(range(1, 13))
             sub["__title"] = title_series.values
@@ -1164,7 +1158,6 @@ def load_sales_from_uploads(
                 var_name="month",
                 value_name="revenue",
             )
-            # 벡터화 _to_number: string 변환 → 숫자 외 문자 제거 → to_numeric
             rev_str = (
                 melted["revenue"].astype("string")
                 .str.replace(r"[^0-9.\-]", "", regex=True)
@@ -1175,15 +1168,9 @@ def load_sales_from_uploads(
             melted["content_title"] = melted["__title"]
             melted["year"] = year
             melted["is_estimate"] = False
-            rows.append(
-                melted[["content_id", "content_title", "year", "month", "revenue", "is_estimate"]]
-            )
+            rows.append(melted[_EMPTY_LONG_COLUMNS])
 
-        # 추정용: 연도별 raw bytes 만 보관 (viewing_log/sales_log 는 캐시된 헬퍼가 lazy 로 처리)
-        if estimate_missing or apply_rate_to_actuals:
-            sheets_by_year[year] = data
-
-        # 콘텐츠 제목은 Confidential 전체에서도 수집 (매칭 안 된 ID 용) — 벡터화
+        # 미매칭 ID 도 title 보강 (Confidential 전체에서) — 벡터
         if title_col:
             ids_all = df[id_col].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
             titles_all = df[title_col].where(df[title_col].notna(), "").astype(str).str.strip()
@@ -1193,12 +1180,78 @@ def load_sales_from_uploads(
 
         file_status[filename] = f"✅ {year}년 · {matched_rows}개 행 매칭 (정산금 기준)"
 
-    # 추정: (콘텐츠, 연도) 조합 중 실제 정산금 데이터 없으면 공식으로 추정.
-    # apply_rate_to_actuals=True 면 실제값이 있어도 요율 기반 추정으로 덮어씀.
-    estimate_log: list = []
-    override_keys: set = set()  # (year, cid) — 실제 정산금을 추정으로 덮어쓴 키
+    actual_df = pd.concat(rows, ignore_index=True) if rows else empty.copy()
+    return actual_df, actual_ids_by_year, title_by_id, file_status, errors
+
+
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
+def _load_actual_rows_by_sig(
+    signature: tuple,
+    content_ids_tuple: tuple,
+    selected_categories_tuple: tuple,
+    _file_datas,
+):
+    """signature 기반 캐시 — 요율/매출종류 변경에 영향 받지 않는 단계.
+    요율 변경 시 이 캐시가 hit 되어 melt/filter 재실행 회피."""
+    ids_normalized = frozenset(str(x).strip() for x in content_ids_tuple if str(x).strip())
+    selected_categories = list(selected_categories_tuple) or None
+    return _build_actual_rows(_file_datas, ids_normalized, selected_categories)
+
+
+def load_sales_from_uploads(
+    file_datas: list[tuple[str, bytes]],
+    content_ids: list[str],
+    selected_categories: list[str] | None = None,
+    estimate_missing: bool = False,
+    estimate_bill_type: str = "B-1",
+    estimate_rates: dict[str, float] | None = None,
+    default_rate: float = 0.5,
+    apply_rate_to_actuals: bool = False,
+) -> tuple[pd.DataFrame, dict[str, str], dict[int, str]]:
+    """업로드 엑셀에서 선택 콘텐츠의 월별 매출 long format 반환.
+
+    - 기본: Confidential 시트의 type=정산금(rs기준) 행에서 실제 매출 집계
+    - estimate_missing=True: 정산금 행이 없는 (콘텐츠, 연도) 조합에 대해
+      viewing_log + sales_log 기반 매직시트 공식으로 추정
+      반환 df 의 is_estimate 컬럼에 True 표시됨
+    - estimate_rates: 콘텐츠 ID → 요율 매핑. 없으면 default_rate 사용.
+    - apply_rate_to_actuals=True: 실제 정산금이 있는 (콘텐츠, 연도) 도
+      요율 기반 추정으로 덮어씀. log 데이터가 없어 추정이 불가하면 실제값 유지.
+
+    실제 정산금 row 빌드는 `_load_actual_rows_by_sig` 에 분리·캐시되어
+    요율 변경 시 melt/filter 비용이 0 이 됨.
+    """
+    if estimate_rates is None:
+        estimate_rates = {}
+    ids_normalized = {str(x).strip() for x in content_ids if str(x).strip()}
+    empty = pd.DataFrame(columns=_EMPTY_LONG_COLUMNS)
+    if not ids_normalized or not file_datas:
+        return empty, {}, {}
+
+    sig = _file_datas_signature(file_datas)
+    cid_tuple = tuple(sorted(ids_normalized))
+    cat_tuple = tuple(sorted(selected_categories or ()))
+    actual_df, actual_ids_by_year, title_by_id, file_status_base, errors_base = (
+        _load_actual_rows_by_sig(sig, cid_tuple, cat_tuple, file_datas)
+    )
+    # 캐시된 dict 들은 변경 금지 — 호출자 별 변경 위해 얕은 복사
+    file_status = dict(file_status_base)
+    errors = dict(errors_base)
+    title_by_id = dict(title_by_id)
+
+    # 추정 단계용 year → raw bytes 매핑 (가벼움 — 파일명 파싱 + dict 빌드)
+    year_data_map: dict = {}
     if estimate_missing or apply_rate_to_actuals:
-        for year, year_data in sheets_by_year.items():
+        for name, data in file_datas:
+            yr = _detect_year_from_filename(name)
+            if yr is not None:
+                year_data_map[yr] = data
+
+    estimate_rows: list = []
+    estimate_log: list = []
+    override_keys: set = set()
+    if year_data_map:
+        for year, year_data in year_data_map.items():
             actuals_for_year = actual_ids_by_year.get(year, set())
             target_ids = ids_normalized if apply_rate_to_actuals else (ids_normalized - actuals_for_year)
             for cid in target_ids:
@@ -1218,7 +1271,7 @@ def load_sales_from_uploads(
                     "revenue": [monthly[m] for m in range(1, 13)],
                     "is_estimate": True,
                 })
-                rows.append(est_df)
+                estimate_rows.append(est_df)
                 if cid in actuals_for_year:
                     override_keys.add((year, cid))
                 estimate_log.append(f"{year}년 · {cid}({title or 'ID'}) · {nonzero_count}개월 추정 (요율 {rate})")
@@ -1227,8 +1280,11 @@ def load_sales_from_uploads(
             label = "추정/덮어쓰기" if apply_rate_to_actuals else "추정"
             file_status["_추정"] = f"💡 {label} 계산 {len(estimate_log)}건 (매출종류={estimate_bill_type}, 콘텐츠별 요율 적용)"
 
-    df_out = pd.concat(rows, ignore_index=True) if rows else empty.copy()
-    # 요율 덮어쓰기로 추정 row 가 생긴 (year, cid) 의 실제 row 는 제거 (중복 방지)
+    if estimate_rows:
+        df_out = pd.concat([actual_df] + estimate_rows, ignore_index=True) if not actual_df.empty else pd.concat(estimate_rows, ignore_index=True)
+    else:
+        df_out = actual_df.copy() if not actual_df.empty else empty.copy()
+
     if override_keys and not df_out.empty:
         years_int = pd.to_numeric(df_out["year"], errors="coerce").astype("Int64")
         cids_str = df_out["content_id"].astype(str)
@@ -1240,7 +1296,7 @@ def load_sales_from_uploads(
         drop_mask = in_override & (~df_out["is_estimate"].astype(bool))
         if drop_mask.any():
             df_out = df_out[~drop_mask].reset_index(drop=True)
-    # 빈 content_title 을 title_by_id 로 보강 (추정 row 등 제목이 누락된 경우 대응)
+
     if not df_out.empty and "content_title" in df_out.columns:
         empty_mask = (
             df_out["content_title"].isna()
@@ -1446,7 +1502,7 @@ def _load_sales(
     )
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _load_sales_cached_by_sig(
     signature: tuple,
     content_ids_tuple: tuple,
@@ -1580,7 +1636,7 @@ def build_excel_export(
     return buffer.getvalue()
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, hash_funcs=_FAST_BYTES_HASH)
 def _build_excel_export_cached(
     df: pd.DataFrame, ordered_ids: tuple, depreciation: float = FLAT_DEPRECIATION,
 ) -> bytes:
